@@ -11,7 +11,7 @@ import { PrivateFramePage } from './pages/PrivateFramePage';
 export const App: React.FC = () => {
   return (
     <BrowserRouter>
-      <div className="min-h-screen flex flex-col font-sans">
+      <div className="min-h-screen flex flex-col font-sans bg-[#fdfafc] text-gray-700">
         <Navbar />
         <main className="flex-1">
           <Routes>
