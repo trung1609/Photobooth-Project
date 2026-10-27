@@ -359,10 +359,19 @@ export const CustomizerStudio: React.FC = () => {
           }
 
           const fileName = `PhotoXinhh_${stripColumns === 1 ? '1cot' : '2cot'}_300DPI.jpg`;
-          const file = new File([blob], fileName, { type: 'image/jpeg' });
-          const dataUrl = highResCanvas.toDataURL('image/jpeg', 0.98);
+          const isIOS = /iPhone|iPad|iPod/i.test(navigator.userAgent);
 
-          // Confetti celebration
+          // 1. Tải về trực tiếp vào máy (Hoạt động tức thì trên PC, Laptop và Android)
+          const blobUrl = URL.createObjectURL(blob);
+          const link = document.createElement('a');
+          link.href = blobUrl;
+          link.download = fileName;
+          document.body.appendChild(link);
+          link.click();
+          document.body.removeChild(link);
+          setTimeout(() => URL.revokeObjectURL(blobUrl), 3000);
+
+          // Hiệu ứng pháo hoa chúc mừng
           confetti({
             particleCount: 90,
             spread: 70,
@@ -370,37 +379,28 @@ export const CustomizerStudio: React.FC = () => {
             colors: ['#ec4899', '#f43f5e', '#a855f7', '#fb7185', '#38bdf8', '#ffffff'],
           });
 
-          // 1. Mobile Web Share API: Native Save to Photos Sheet (iOS Safari & Android Chrome)
-          if (navigator.canShare && navigator.canShare({ files: [file] })) {
-            try {
-              await navigator.share({
-                files: [file],
-                title: 'PhotoXinhh Photobooth',
-                text: 'Dải ảnh PhotoXinhh xinh xắn của bạn ✨',
-              });
-              setIsDownloading(false);
-              return;
-            } catch (err) {
-              if ((err as Error).name !== 'AbortError') {
-                console.log('Share dismissed or fallback triggered');
+          // 2. Xử lý riêng cho Mobile (Đặc biệt là iOS để lưu thẳng vào Thư Viện Ảnh - Photos)
+          if (isIOS) {
+            const file = new File([blob], fileName, { type: 'image/jpeg' });
+            const dataUrl = highResCanvas.toDataURL('image/jpeg', 0.98);
+
+            // Trên iPhone/iPad: Mở Native Share Sheet với tùy chọn "Lưu hình ảnh" vào Camera Roll
+            if (navigator.canShare && navigator.canShare({ files: [file] })) {
+              try {
+                await navigator.share({
+                  files: [file],
+                  title: 'PhotoXinhh Photobooth',
+                  text: 'Dải ảnh PhotoXinhh xinh xắn của bạn ✨',
+                });
+              } catch (err) {
+                if ((err as Error).name !== 'AbortError') {
+                  setDownloadModalImage(dataUrl);
+                }
               }
+            } else {
+              // Nếu trình duyệt trong ứng dụng (Zalo/Facebook): hiển thị popup chạm giữ lưu ảnh
+              setDownloadModalImage(dataUrl);
             }
-          }
-
-          // 2. Standard direct download link (Desktop and supported mobile browsers)
-          const url = URL.createObjectURL(blob);
-          const link = document.createElement('a');
-          link.href = url;
-          link.download = fileName;
-          document.body.appendChild(link);
-          link.click();
-          document.body.removeChild(link);
-          setTimeout(() => URL.revokeObjectURL(url), 3000);
-
-          // 3. Mobile Fallback Modal: Guarantees user can save on iOS/Android in-app browsers
-          const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
-          if (isMobile) {
-            setDownloadModalImage(dataUrl);
           }
 
           setIsDownloading(false);
