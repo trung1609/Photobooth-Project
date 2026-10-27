@@ -1,29 +1,30 @@
 import React from 'react';
+import { BrowserRouter, Routes, Route } from 'react-router-dom';
 import { Navbar } from './components/Navbar';
-import { LayoutSelector } from './components/LayoutSelector';
-import { CameraStudio } from './components/CameraStudio';
-import { CustomizerStudio } from './components/CustomizerStudio';
-import { ResultModal } from './components/ResultModal';
-import { useBoothStore } from './store/useBoothStore';
+import { Footer } from './components/Footer';
+import { HomePage } from './pages/HomePage';
+import { BoothAppPage } from './pages/BoothAppPage';
+import { FramesPage } from './pages/FramesPage';
+import { FeedbacksPage } from './pages/FeedbacksPage';
+import { PrivateFramePage } from './pages/PrivateFramePage';
 
 export const App: React.FC = () => {
-  const { step } = useBoothStore();
-
   return (
-    <div className="min-h-screen flex flex-col bg-slate-900 text-slate-100">
-      <Navbar />
-
-      <main className="flex-1 flex flex-col justify-center">
-        {step === 'select_layout' && <LayoutSelector />}
-        {step === 'capture' && <CameraStudio />}
-        {step === 'customize' && <CustomizerStudio />}
-        {step === 'result' && <ResultModal />}
-      </main>
-
-      <footer className="w-full border-t border-slate-800 py-6 text-center text-xs text-slate-500">
-        <p>© 2026 PhotoXinhh • Photobooth Online Miễn Phí • Không Lưu Ảnh Riêng Tư • Chuẩn 300 DPI</p>
-      </footer>
-    </div>
+    <BrowserRouter>
+      <div className="min-h-screen flex flex-col font-sans">
+        <Navbar />
+        <main className="flex-1">
+          <Routes>
+            <Route path="/" element={<HomePage />} />
+            <Route path="/app" element={<BoothAppPage />} />
+            <Route path="/frames" element={<FramesPage />} />
+            <Route path="/feedbacks" element={<FeedbacksPage />} />
+            <Route path="/privateframe" element={<PrivateFramePage />} />
+          </Routes>
+        </main>
+        <Footer />
+      </div>
+    </BrowserRouter>
   );
 };
 

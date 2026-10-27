@@ -1,47 +1,68 @@
 import React from 'react';
-import { Camera, Sparkles, RotateCcw } from 'lucide-react';
-import { useBoothStore } from '../store/useBoothStore';
+import { Link, useLocation } from 'react-router-dom';
+import { Camera } from 'lucide-react';
 
 export const Navbar: React.FC = () => {
-  const { step, setStep, resetPhotos } = useBoothStore();
+  const location = useLocation();
+  const currentPath = location.pathname;
 
-  const handleRestart = () => {
-    if (confirm('Bạn có chắc muốn bắt đầu lại phiên chụp mới?')) {
-      resetPhotos();
-      setStep('select_layout');
-    }
-  };
+  const navLinks = [
+    { to: '/', label: 'Trang Chủ' },
+    { to: '/frames', label: 'Thư viện khung' },
+    { to: '/feedbacks', label: 'Ảnh cộng đồng' },
+    { to: '/privateframe', label: 'Tạo khung riêng' },
+  ];
 
   return (
-    <header className="w-full border-b border-pink-500/20 bg-slate-900/80 backdrop-blur-md sticky top-0 z-50 px-4 md:px-8 py-3.5 flex items-center justify-between">
-      <div className="flex items-center gap-3 cursor-pointer" onClick={() => setStep('select_layout')}>
-        <div className="w-10 h-10 rounded-2xl bg-gradient-to-tr from-pink-500 to-rose-400 flex items-center justify-center shadow-lg shadow-pink-500/30">
+    <header className="w-full py-3.5 px-4 sm:px-6 md:px-12 flex justify-between items-center bg-white/85 backdrop-blur-md border-b border-pink-100 sticky top-0 z-50 transition-all">
+      <Link to="/" className="flex items-center gap-2.5 flex-shrink-0 group">
+        <div className="w-9 h-9 rounded-full bg-gradient-to-tr from-pink-500 to-rose-400 flex items-center justify-center shadow-md shadow-pink-500/20 group-hover:scale-105 transition-transform">
           <Camera className="w-5 h-5 text-white" />
         </div>
-        <div>
-          <span className="font-extrabold text-xl tracking-tight bg-gradient-to-r from-pink-400 via-rose-300 to-purple-300 bg-clip-text text-transparent">
+        <div className="flex items-center">
+          <span className="font-extrabold text-xl tracking-tight text-pink-600 whitespace-nowrap">
             PhotoXinhh
           </span>
-          <span className="text-[10px] ml-2 px-2 py-0.5 rounded-full bg-pink-500/20 text-pink-300 font-semibold uppercase tracking-wider">
-            Online Booth
+          <span className="text-[10px] ml-2 px-2 py-0.5 rounded-full bg-pink-100 text-pink-600 font-bold uppercase tracking-wider hidden sm:inline-block">
+            Online
           </span>
         </div>
-      </div>
+      </Link>
 
-      <nav className="flex items-center gap-2 sm:gap-4">
-        {step !== 'select_layout' && (
-          <button
-            onClick={handleRestart}
-            className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-full text-xs sm:text-sm font-medium text-slate-300 hover:text-white bg-slate-800 hover:bg-slate-700 transition"
-          >
-            <RotateCcw className="w-3.5 h-3.5" />
-            <span className="hidden sm:inline">Chụp Lại Từ Đầu</span>
-          </button>
-        )}
+      <nav aria-label="Main Navigation" className="flex items-center gap-1.5 sm:gap-3 text-sm font-semibold">
+        {navLinks.map((link) => {
+          const isActive = currentPath === link.to;
+          return (
+            <Link
+              key={link.to}
+              to={link.to}
+              className={`hidden sm:inline-block px-3 py-1.5 rounded-full transition-colors whitespace-nowrap text-xs md:text-sm ${
+                isActive
+                  ? 'bg-pink-100 text-pink-700 font-bold'
+                  : 'text-gray-700 hover:text-pink-600 hover:bg-pink-50/50'
+              }`}
+            >
+              {link.label}
+            </Link>
+          );
+        })}
 
-        <div className="flex items-center gap-2 text-xs font-semibold px-3 py-1.5 rounded-full bg-pink-500/10 text-pink-300 border border-pink-500/20">
-          <Sparkles className="w-3.5 h-3.5 text-pink-400" />
-          <span>Khung Hot Trend 2026</span>
+        <Link
+          to="/app"
+          className="inline-flex items-center gap-1.5 px-4 py-2 rounded-full bg-gradient-to-r from-pink-500 to-purple-600 text-white font-bold text-xs sm:text-sm hover:shadow-lg hover:shadow-pink-500/25 hover:scale-105 active:scale-95 transition-all whitespace-nowrap"
+        >
+          <Camera className="w-4 h-4" />
+          <span>Chụp ngay</span>
+        </Link>
+
+        {/* Language selector */}
+        <div className="flex items-center gap-1 pl-1">
+          <span className="px-2 py-0.5 rounded-md text-xs font-bold bg-pink-100 text-pink-700">
+            VN
+          </span>
+          <span className="px-2 py-0.5 rounded-md text-xs font-medium text-gray-400 hover:text-gray-700 cursor-pointer">
+            EN
+          </span>
         </div>
       </nav>
     </header>
