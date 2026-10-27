@@ -4,17 +4,17 @@ import {
   RotateCcw,
   FlipHorizontal,
   Upload,
-  Sparkles,
   Zap,
   Image as ImageIcon,
-  Check,
   ChevronDown,
   Menu,
   X,
-  ArrowRight
+  ArrowRight,
+  Search
 } from 'lucide-react';
-import { useBoothStore, FRAME_PRESETS } from '../store/useBoothStore';
+import { useBoothStore } from '../store/useBoothStore';
 import { LayoutType, FilterType } from '../types/photobooth';
+import { SAMPLE_FRAMES, FrameTemplate } from '../data/framesData';
 import { CustomizerStudio } from '../components/CustomizerStudio';
 import { ResultModal } from '../components/ResultModal';
 
@@ -59,6 +59,8 @@ export const BoothAppPage: React.FC = () => {
   const [isFlashing, setIsFlashing] = useState(false);
   const [isAutoSequence, setIsAutoSequence] = useState(false);
   const [showFrameModal, setShowFrameModal] = useState(false);
+  const [frameSearch, setFrameSearch] = useState('');
+  const [frameCategory, setFrameCategory] = useState('all');
   const [cameraError, setCameraError] = useState<string | null>(null);
 
   // Play synthetic camera beep & shutter sounds via Web Audio API
@@ -179,7 +181,6 @@ export const BoothAppPage: React.FC = () => {
         takeSnapshot();
         setIsCountingDown(false);
 
-        // If in auto sequence and more photos needed, continue sequence
         if (isAutoSequence && photos.length + 1 < totalRequired) {
           setTimeout(() => {
             setIsCountingDown(true);
@@ -203,6 +204,27 @@ export const BoothAppPage: React.FC = () => {
     reader.onload = (event) => {
       if (event.target?.result) {
         updatePhotoAtSlot(slotIndex, event.target.result as string);
+      }
+    };
+    reader.readAsDataURL(file);
+  };
+
+  // Custom frame file upload in modal
+  const handleCustomFrameUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      if (event.target?.result) {
+        setFrame({
+          id: `custom-${Date.now()}`,
+          name: file.name.replace(/\.[^/.]+$/, ''),
+          bgColor: '#ffffff',
+          textColor: '#be185d',
+          category: 'pastel',
+        });
+        setShowFrameModal(false);
       }
     };
     reader.readAsDataURL(file);
@@ -232,7 +254,23 @@ export const BoothAppPage: React.FC = () => {
     });
   };
 
-  // If user requested customization or result view
+  const handleSelectTemplate = (tpl: FrameTemplate) => {
+    setFrame({
+      id: tpl.id,
+      name: tpl.name,
+      bgColor: tpl.bgColor,
+      textColor: tpl.textColor,
+      category: 'pastel',
+    });
+    setShowFrameModal(false);
+  };
+
+  const filteredModalFrames = SAMPLE_FRAMES.filter((f) => {
+    const matchCat = frameCategory === 'all' || f.category === frameCategory;
+    const matchSearch = f.name.toLowerCase().includes(frameSearch.toLowerCase());
+    return matchCat && matchSearch;
+  });
+
   if (step === 'customize') {
     return <CustomizerStudio />;
   }
@@ -249,7 +287,7 @@ export const BoothAppPage: React.FC = () => {
           {/* Top Left Menu & Language */}
           <div className="absolute top-0 left-0 flex items-center gap-2">
             <button
-              onClick={() => alert('Menu PhotoXinhh: Chọn bố cục, hỗ trợ chụp hoặc đổi ngôn ngữ')}
+              onClick={() => alert('Menu PhotoXinhh')}
               className="flex items-center gap-1.5 px-3 py-1 rounded-full bg-pink-400 text-white font-semibold text-xs shadow-2xs hover:bg-pink-500 transition"
             >
               <Menu className="w-3.5 h-3.5" />
@@ -262,7 +300,7 @@ export const BoothAppPage: React.FC = () => {
             </div>
           </div>
 
-          {/* Center Brand Title in cute cursive font */}
+          {/* Center Brand Title */}
           <div className="space-y-0.5 pt-1 sm:pt-0">
             <h1 className="font-cursive text-4xl sm:text-5xl text-pink-400 font-normal tracking-wide drop-shadow-2xs">
               PhotoXinhh
@@ -272,7 +310,7 @@ export const BoothAppPage: React.FC = () => {
             </p>
           </div>
 
-          {/* Controls Bar: Layout, Đếm ngược, Hỗ trợ chụp */}
+          {/* Controls Bar */}
           <div className="flex flex-wrap items-center justify-center gap-4 sm:gap-6 pt-3 text-xs">
             {/* Layout Ảnh */}
             <div className="flex items-center gap-1.5">
@@ -310,9 +348,10 @@ export const BoothAppPage: React.FC = () => {
               <span className="font-semibold text-pink-500">Hỗ Trợ Chụp</span>
               <button
                 onClick={() => setShowFrameModal(true)}
-                className="px-3 py-1 rounded-lg bg-pink-100 text-pink-600 border border-pink-200 font-semibold hover:bg-pink-200 transition shadow-2xs"
+                className="px-3 py-1 rounded-lg bg-pink-100 text-pink-600 border border-pink-200 font-semibold hover:bg-pink-200 transition shadow-2xs flex items-center gap-1"
               >
-                Chọn Khung
+                <span>Chọn Khung</span>
+                <span className="text-[10px] text-pink-500">({frame.name})</span>
               </button>
             </div>
           </div>
@@ -386,7 +425,7 @@ export const BoothAppPage: React.FC = () => {
               </div>
             </div>
 
-            {/* THREE ROUND ACTION BUTTONS (Chụp tay, AUTO, Chụp Lại) */}
+            {/* THREE ROUND ACTION BUTTONS */}
             <div className="flex items-center justify-center gap-6 pt-1">
               {/* Button 1: Chụp tay */}
               <div className="flex flex-col items-center gap-1">
@@ -401,7 +440,7 @@ export const BoothAppPage: React.FC = () => {
                 <span className="text-[11px] font-semibold text-gray-600">Chụp tay</span>
               </div>
 
-              {/* Button 2: AUTO (Center Big Pink) */}
+              {/* Button 2: AUTO */}
               <div className="flex flex-col items-center gap-1">
                 <button
                   onClick={handleAutoCapture}
@@ -510,7 +549,6 @@ export const BoothAppPage: React.FC = () => {
                     </div>
                   ) : (
                     <div className="flex flex-col items-center justify-center py-2 space-y-2 text-center">
-                      {/* Outline photo frame icon */}
                       <div className="w-12 h-12 rounded-xl flex items-center justify-center text-purple-400 border-2 border-dashed border-purple-200 bg-purple-50/30">
                         <ImageIcon className="w-6 h-6" />
                       </div>
@@ -531,7 +569,7 @@ export const BoothAppPage: React.FC = () => {
               );
             })}
 
-            {/* When all photos taken or ready -> Next Step Button */}
+            {/* When all photos ready -> Next Step Button */}
             {photos.length >= totalRequired && (
               <button
                 onClick={() => setStep('customize')}
@@ -545,55 +583,109 @@ export const BoothAppPage: React.FC = () => {
         </div>
       </div>
 
-      {/* 3. MODAL CHỌN KHUNG */}
+      {/* 3. MODAL: "CHỌN KHUNG HỖ TRỢ CHỤP" (CHUẨN 100% NHƯ TRANG MẪU) */}
       {showFrameModal && (
-        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-2xs flex items-center justify-center p-4">
-          <div className="bg-white rounded-3xl p-6 max-w-lg w-full border border-pink-100 shadow-2xl space-y-4">
-            <div className="flex items-center justify-between border-b border-pink-100 pb-3">
-              <div className="flex items-center gap-2">
-                <Sparkles className="w-5 h-5 text-pink-500" />
-                <h3 className="font-bold text-base text-gray-800">Chọn Khung Ảnh Photobooth</h3>
+        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-2xs flex items-center justify-center p-3 sm:p-6 animate-in fade-in">
+          <div className="bg-white rounded-3xl max-w-5xl w-full border border-pink-100 shadow-2xl overflow-hidden flex flex-col max-h-[90vh]">
+            {/* Modal Header */}
+            <div className="p-5 border-b border-gray-100 flex items-start justify-between">
+              <div>
+                <h3 className="font-bold text-lg text-gray-800">Chọn Khung Hỗ Trợ Chụp</h3>
+                <p className="text-xs text-emerald-600 font-medium mt-1">
+                  Tính năng này giúp bạn xem trước khung và căn chỉnh góc chụp dễ dàng hơn (Chỉ Hoạt Động Với Layout 1x1 hoặc 1x4).
+                </p>
               </div>
               <button
                 onClick={() => setShowFrameModal(false)}
-                className="p-1 rounded-full hover:bg-gray-100 text-gray-500 transition"
+                className="p-1.5 rounded-full hover:bg-gray-100 text-gray-400 hover:text-gray-700 transition"
               >
                 <X className="w-5 h-5" />
               </button>
             </div>
 
-            <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 max-h-[60vh] overflow-y-auto p-1">
-              {FRAME_PRESETS.map((preset) => (
-                <button
-                  key={preset.id}
-                  onClick={() => {
-                    setFrame(preset);
-                    setShowFrameModal(false);
-                  }}
-                  className={`p-3 rounded-2xl border text-left transition flex flex-col items-center gap-2 ${
-                    frame.id === preset.id
-                      ? 'border-pink-500 bg-pink-50/60 shadow-xs'
-                      : 'border-gray-200 hover:border-pink-200 bg-gray-50/50'
-                  }`}
+            {/* Modal Filter Dropdown & Search Bar */}
+            <div className="px-5 pt-3 pb-2 space-y-2.5">
+              <div className="relative">
+                <select
+                  value={frameCategory}
+                  onChange={(e) => setFrameCategory(e.target.value)}
+                  className="w-full px-3.5 py-2 rounded-xl bg-gray-50 border border-gray-200 text-xs font-medium text-gray-700 focus:outline-none focus:border-pink-400 cursor-pointer"
                 >
-                  <div
-                    className="w-12 h-16 rounded-xl border border-gray-300 shadow-2xs flex items-center justify-center"
-                    style={{ backgroundColor: preset.bgColor }}
-                  >
-                    {frame.id === preset.id && <Check className="w-4 h-4 text-pink-600" />}
-                  </div>
-                  <span className="text-xs font-semibold text-gray-700 text-center">{preset.name}</span>
-                </button>
-              ))}
+                  <option value="all">Tất Cả Frame</option>
+                  <option value="basic">Khung Cơ Bản</option>
+                  <option value="cute">Cute & Pastel</option>
+                  <option value="kpop">Idol K-Pop</option>
+                  <option value="cartoon">Hoạt Hình & Anime</option>
+                  <option value="retro">Vintage & Y2K</option>
+                </select>
+              </div>
+
+              <div className="relative">
+                <Search className="w-4 h-4 text-gray-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
+                <input
+                  type="text"
+                  value={frameSearch}
+                  onChange={(e) => setFrameSearch(e.target.value)}
+                  placeholder="Tìm tên khung hoặc nametag..."
+                  className="w-full pl-9 pr-4 py-2 rounded-xl bg-gray-50 border border-gray-200 text-xs text-gray-700 focus:outline-none focus:border-pink-400"
+                />
+              </div>
             </div>
 
-            <div className="pt-2 flex justify-end">
-              <button
-                onClick={() => setShowFrameModal(false)}
-                className="px-5 py-2 rounded-xl bg-pink-500 hover:bg-pink-600 text-white font-semibold text-xs transition"
-              >
-                Đồng ý
-              </button>
+            {/* Modal Frames Grid */}
+            <div className="p-5 overflow-y-auto grid grid-cols-3 sm:grid-cols-4 md:grid-cols-6 lg:grid-cols-8 gap-3 max-h-[60vh]">
+              {/* Card 1: Upload Your Own Frame */}
+              <label className="border-2 border-dashed border-gray-300 hover:border-pink-400 rounded-xl p-2.5 flex flex-col items-center justify-center text-center cursor-pointer bg-gray-50/60 hover:bg-pink-50/40 transition aspect-[1/3]">
+                <div className="w-8 h-8 rounded-full bg-white border border-gray-200 flex items-center justify-center text-gray-600 mb-1.5 shadow-2xs">
+                  <Upload className="w-4 h-4" />
+                </div>
+                <span className="text-[10px] font-semibold text-gray-600 leading-tight">
+                  Tải lên khung của bạn
+                </span>
+                <input
+                  type="file"
+                  accept="image/png,image/webp"
+                  className="hidden"
+                  onChange={handleCustomFrameUpload}
+                />
+              </label>
+
+              {/* Other Frame Cards */}
+              {filteredModalFrames.map((tpl) => {
+                const isCurrent = frame.id === tpl.id;
+
+                return (
+                  <div
+                    key={tpl.id}
+                    onClick={() => handleSelectTemplate(tpl)}
+                    className={`rounded-xl border p-2 flex flex-col items-center justify-between cursor-pointer transition aspect-[1/3] relative ${
+                      isCurrent
+                        ? 'border-pink-500 bg-pink-50/70 shadow-xs ring-1 ring-pink-400'
+                        : 'border-gray-200 hover:border-pink-300 bg-white hover:shadow-2xs'
+                    }`}
+                  >
+                    {/* Simulated 4-cut vertical strip frame thumbnail */}
+                    <div
+                      className="w-full flex-1 rounded-md p-1 flex flex-col justify-between shadow-2xs border border-black/10 overflow-hidden"
+                      style={{ backgroundColor: tpl.bgColor }}
+                    >
+                      {/* 4 Transparent/white photo cutout slots */}
+                      {Array.from({ length: 4 }).map((_, i) => (
+                        <div
+                          key={i}
+                          className="w-full flex-1 my-0.5 rounded-xs bg-white/70 border border-black/10 flex items-center justify-center text-[7px] text-gray-300 font-bold"
+                        >
+                          {i + 1}
+                        </div>
+                      ))}
+                    </div>
+
+                    <div className="text-[10px] font-medium text-gray-700 truncate w-full text-center mt-1">
+                      {tpl.name}
+                    </div>
+                  </div>
+                );
+              })}
             </div>
           </div>
         </div>
