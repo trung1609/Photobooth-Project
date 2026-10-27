@@ -292,9 +292,10 @@ export const BoothAppPage: React.FC = () => {
 
         globalCameraStream = await navigator.mediaDevices.getUserMedia({
           video: {
-            width: { ideal: 1920 },
-            height: { ideal: 1080 },
+            width: { ideal: 3840, min: 1280 },
+            height: { ideal: 2160, min: 720 },
             facingMode: 'user',
+            frameRate: { ideal: 30, max: 60 },
           },
           audio: false,
         });
@@ -329,15 +330,24 @@ export const BoothAppPage: React.FC = () => {
     }
   });
 
-  // Take snapshot with filter applied directly
+  // Take snapshot with filter applied directly (Ultra High Definition & Lossless PNG)
   const takeSnapshot = useCallback(() => {
     if (!videoRef.current) return;
     const video = videoRef.current;
     const canvas = document.createElement('canvas');
-    canvas.width = video.videoWidth || 1280;
-    canvas.height = video.videoHeight || 720;
+
+    // Luôn bắt trọn 100% độ phân giải gốc của cảm biến camera
+    const nativeWidth = video.videoWidth || 1920;
+    const nativeHeight = video.videoHeight || 1080;
+    canvas.width = nativeWidth;
+    canvas.height = nativeHeight;
+
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
+
+    // Kích hoạt bộ nội suy hình ảnh chất lượng cao nhất của trình duyệt
+    ctx.imageSmoothingEnabled = true;
+    ctx.imageSmoothingQuality = 'high';
 
     if (isMirror) {
       ctx.translate(canvas.width, 0);
@@ -357,7 +367,8 @@ export const BoothAppPage: React.FC = () => {
     playSound('shutter');
     setTimeout(() => setIsFlashing(false), 250);
 
-    const dataUrl = canvas.toDataURL('image/jpeg', 0.95);
+    // Lưu ảnh dạng Lossless PNG chống vỡ hạt và triệt tiêu hoàn toàn suy hao nén kép
+    const dataUrl = canvas.toDataURL('image/png');
     addPhoto(dataUrl);
   }, [isMirror, playSound, addPhoto, currentFilterObj]);
 

@@ -11,23 +11,10 @@ import {
 import confetti from 'canvas-confetti';
 import { useBoothStore } from '../store/useBoothStore';
 import { SAMPLE_FRAMES, FrameTemplate } from '../data/framesData';
-import { FilterType } from '../types/photobooth';
-
-const FILTERS_MAP: Record<FilterType, string> = {
-  cool_pink: 'brightness(1.07) contrast(1.04) saturate(1.025) hue-rotate(-3.5deg)',
-  cool_white: 'brightness(1.06) contrast(1.06) saturate(1.02) hue-rotate(-3deg)',
-  korean_glow: 'brightness(1.08) contrast(1.02) saturate(1.05) hue-rotate(-5deg)',
-  normal: 'none',
-  bw: 'grayscale(100%) contrast(1.2) brightness(1.03)',
-  vintage: 'sepia(25%) contrast(1.08) brightness(0.98)',
-  warm_retro: 'sepia(18%) saturate(1.15) hue-rotate(-8deg) brightness(1.03)',
-  cool_cyber: 'contrast(1.12) hue-rotate(15deg) saturate(1.15)',
-};
 
 export const CustomizerStudio: React.FC = () => {
   const {
     photos,
-    filter,
     frame,
     setFrame,
     resetPhotos,
@@ -68,6 +55,12 @@ export const CustomizerStudio: React.FC = () => {
     loadedPhotos: HTMLImageElement[],
     loadedOverlay: HTMLImageElement | null
   ) => {
+    // Enable highest quality smoothing
+    ctx.imageSmoothingEnabled = true;
+    ctx.imageSmoothingQuality = 'high';
+
+    const s = stripWidth / 400; // Relative scale factor compared to base 400px
+
     // 1. Background fill
     ctx.fillStyle = selectedFrame.bgColor || '#ffffff';
     ctx.fillRect(xOffset, 0, stripWidth, stripHeight);
@@ -82,18 +75,15 @@ export const CustomizerStudio: React.FC = () => {
     const slotW = stripWidth - padX * 2;
     const slotH = availableH / 4;
 
-    // 3. Draw 4 photos with active filter applied
-    const cssFilter = FILTERS_MAP[filter] || 'none';
-
     for (let i = 0; i < 4; i++) {
       const img = loadedPhotos[i % loadedPhotos.length];
       const slotY = padTop + i * (slotH + gap);
 
       if (img) {
         ctx.save();
-        // Clip slot with slight rounded corners
+        // Clip slot with smooth rounded corners scaled to resolution
         ctx.beginPath();
-        const r = 4;
+        const r = Math.round(4 * s);
         ctx.moveTo(xOffset + padX + r, slotY);
         ctx.lineTo(xOffset + padX + slotW - r, slotY);
         ctx.quadraticCurveTo(xOffset + padX + slotW, slotY, xOffset + padX + slotW, slotY + r);
@@ -106,8 +96,9 @@ export const CustomizerStudio: React.FC = () => {
         ctx.closePath();
         ctx.clip();
 
-        // Apply skin-grade filter
-        ctx.filter = cssFilter;
+        // Photos already contain native skin-grade grading from camera capture (Lossless PNG)
+        // Keep filter = none to preserve pristine razor sharpness and avoid double-processing blur
+        ctx.filter = 'none';
         drawImageCover(ctx, img, xOffset + padX, slotY, slotW, slotH);
         ctx.restore();
       } else {
@@ -121,6 +112,8 @@ export const CustomizerStudio: React.FC = () => {
     if (loadedOverlay) {
       ctx.save();
       ctx.filter = 'none';
+      ctx.imageSmoothingEnabled = true;
+      ctx.imageSmoothingQuality = 'high';
       ctx.drawImage(loadedOverlay, xOffset, 0, stripWidth, stripHeight);
       ctx.restore();
     } else {
@@ -139,10 +132,11 @@ export const CustomizerStudio: React.FC = () => {
 
       // Slot borders for aesthetic pop
       ctx.strokeStyle = selectedFrame.accentColor || '#fbcfe8';
-      ctx.lineWidth = 1.5;
+      ctx.lineWidth = Math.max(1, Math.round(1.5 * s));
+      const bOffset = Math.max(1, Math.round(1 * s));
       for (let i = 0; i < 4; i++) {
         const slotY = padTop + i * (slotH + gap);
-        ctx.strokeRect(xOffset + padX - 1, slotY - 1, slotW + 2, slotH + 2);
+        ctx.strokeRect(xOffset + padX - bOffset, slotY - bOffset, slotW + bOffset * 2, slotH + bOffset * 2);
       }
 
       ctx.restore();
@@ -173,7 +167,7 @@ export const CustomizerStudio: React.FC = () => {
     }
   };
 
-  // Helper: Cover image into slot rect
+  // Helper: Cover image into slot rect with high quality bicubic interpolation
   const drawImageCover = (
     ctx: CanvasRenderingContext2D,
     img: HTMLImageElement,
@@ -182,6 +176,9 @@ export const CustomizerStudio: React.FC = () => {
     w: number,
     h: number
   ) => {
+    ctx.imageSmoothingEnabled = true;
+    ctx.imageSmoothingQuality = 'high';
+
     const imgRatio = img.width / img.height;
     const targetRatio = w / h;
     let sWidth, sHeight, sx, sy;
@@ -220,6 +217,10 @@ export const CustomizerStudio: React.FC = () => {
         canvas.width = totalCanvasW;
         canvas.height = totalCanvasH;
 
+        // Force browser to use highest quality bicubic interpolation
+        ctx.imageSmoothingEnabled = true;
+        ctx.imageSmoothingQuality = 'high';
+
         // Load all captured photos
         const loadedPhotos: HTMLImageElement[] = [];
         let pendingPhotos = photos.length;
@@ -246,6 +247,8 @@ export const CustomizerStudio: React.FC = () => {
         const drawAll = (loadedOverlay: HTMLImageElement | null) => {
           // Clear background
           ctx.clearRect(0, 0, totalCanvasW, totalCanvasH);
+          ctx.imageSmoothingEnabled = true;
+          ctx.imageSmoothingQuality = 'high';
 
           if (stripColumns === 1) {
             // 1 Cột Ảnh (Single Strip 1x4)
@@ -262,7 +265,7 @@ export const CustomizerStudio: React.FC = () => {
             // Dotted cut line down the center
             ctx.save();
             ctx.strokeStyle = '#cbd5e1';
-            ctx.lineWidth = 1 * scale;
+            ctx.lineWidth = Math.max(1, Math.round(1.5 * scale));
             ctx.setLineDash([6 * scale, 6 * scale]);
             ctx.beginPath();
             ctx.moveTo(singleStripW + 8 * scale, 0);
@@ -294,13 +297,14 @@ export const CustomizerStudio: React.FC = () => {
         });
       });
     },
-    [photos, filter, selectedFrame, customUploadedFrame, stripColumns, showLogo, customCaption]
+    [photos, selectedFrame, customUploadedFrame, stripColumns, showLogo, customCaption]
   );
 
-  // Live re-render whenever options change
+  // Live re-render whenever options change with high-DPI retina display sharpness
   useEffect(() => {
     if (previewCanvasRef.current) {
-      renderCompositeCanvas(previewCanvasRef.current, 1);
+      const dpr = Math.min(window.devicePixelRatio || 1, 2);
+      renderCompositeCanvas(previewCanvasRef.current, dpr);
     }
   }, [renderCompositeCanvas]);
 
@@ -342,14 +346,15 @@ export const CustomizerStudio: React.FC = () => {
   const [isDownloading, setIsDownloading] = useState(false);
   const [downloadModalImage, setDownloadModalImage] = useState<string | null>(null);
 
-  // Download high-resolution composite strip (300 DPI) with full Mobile Web Share & Direct Save support
+  // Download high-resolution composite strip (Ultra HD 4x ~812 DPI) with full Mobile Web Share & Direct Save support
   const handleDownload = async () => {
     if (isDownloading) return;
     setIsDownloading(true);
 
     try {
       const highResCanvas = document.createElement('canvas');
-      await renderCompositeCanvas(highResCanvas, 3); // Scale 3x = ~1200x3600 px (300 DPI)
+      // Scale 4x = 1600x4800 px (~812.8 DPI Ultra HD, vượt xa chuẩn in ảnh thông thường)
+      await renderCompositeCanvas(highResCanvas, 4);
 
       highResCanvas.toBlob(
         async (blob) => {
@@ -358,7 +363,7 @@ export const CustomizerStudio: React.FC = () => {
             return;
           }
 
-          const fileName = `PhotoXinhh_${stripColumns === 1 ? '1cot' : '2cot'}_300DPI.jpg`;
+          const fileName = `PhotoXinhh_${stripColumns === 1 ? '1cot' : '2cot'}_UltraHD.jpg`;
           const isIOS = /iPhone|iPad|iPod/i.test(navigator.userAgent);
 
           // 1. Tải về trực tiếp vào máy (Hoạt động tức thì trên PC, Laptop và Android)
@@ -382,7 +387,7 @@ export const CustomizerStudio: React.FC = () => {
           // 2. Xử lý riêng cho Mobile (Đặc biệt là iOS để lưu thẳng vào Thư Viện Ảnh - Photos)
           if (isIOS) {
             const file = new File([blob], fileName, { type: 'image/jpeg' });
-            const dataUrl = highResCanvas.toDataURL('image/jpeg', 0.98);
+            const dataUrl = highResCanvas.toDataURL('image/jpeg', 1.0);
 
             // Trên iPhone/iPad: Mở Native Share Sheet với tùy chọn "Lưu hình ảnh" vào Camera Roll
             if (navigator.canShare && navigator.canShare({ files: [file] })) {
@@ -390,7 +395,7 @@ export const CustomizerStudio: React.FC = () => {
                 await navigator.share({
                   files: [file],
                   title: 'PhotoXinhh Photobooth',
-                  text: 'Dải ảnh PhotoXinhh xinh xắn của bạn ✨',
+                  text: 'Dải ảnh PhotoXinhh Ultra HD xinh xắn của bạn ✨',
                 });
               } catch (err) {
                 if ((err as Error).name !== 'AbortError') {
@@ -406,7 +411,7 @@ export const CustomizerStudio: React.FC = () => {
           setIsDownloading(false);
         },
         'image/jpeg',
-        0.98
+        1.0 // 100% Maximum Quality - Không nén giảm chất lượng
       );
     } catch (e) {
       console.error('Download error:', e);
