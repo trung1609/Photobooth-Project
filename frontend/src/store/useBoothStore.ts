@@ -22,6 +22,7 @@ interface BoothState {
   timerDuration: number; // 3 or 5 or 10 seconds
   customText: string;
   showDateStamp: boolean;
+  isVideoRecap: boolean;
 
   // Actions
   setStep: (step: AppStep) => void;
@@ -29,16 +30,19 @@ interface BoothState {
   setFilter: (filter: FilterType) => void;
   setFrame: (frame: FrameOption) => void;
   addPhoto: (dataUrl: string) => void;
+  updatePhotoAtSlot: (index: number, dataUrl: string) => void;
+  removePhotoAtSlot: (index: number) => void;
   setPhotos: (photos: string[]) => void;
   resetPhotos: () => void;
   toggleMirror: () => void;
   setTimerDuration: (seconds: number) => void;
   setCustomText: (text: string) => void;
   toggleDateStamp: () => void;
+  toggleVideoRecap: () => void;
 }
 
 export const useBoothStore = create<BoothState>((set) => ({
-  step: 'select_layout',
+  step: 'capture', // Default directly to the photo capture screen!
   layout: '1x4_strip',
   filter: 'normal',
   frame: FRAME_PRESETS[1], // Default pastel pink
@@ -48,16 +52,30 @@ export const useBoothStore = create<BoothState>((set) => ({
   timerDuration: 3,
   customText: 'PHOTOBOOTH • MEMORIES',
   showDateStamp: true,
+  isVideoRecap: false,
 
   setStep: (step) => set({ step }),
   setLayout: (layout) => set({ layout }),
   setFilter: (filter) => set({ filter }),
   setFrame: (frame) => set({ frame }),
   addPhoto: (dataUrl) => set((state) => ({ photos: [...state.photos, dataUrl] })),
+  updatePhotoAtSlot: (index, dataUrl) =>
+    set((state) => {
+      const updated = [...state.photos];
+      updated[index] = dataUrl;
+      return { photos: updated };
+    }),
+  removePhotoAtSlot: (index) =>
+    set((state) => {
+      const updated = [...state.photos];
+      updated.splice(index, 1);
+      return { photos: updated };
+    }),
   setPhotos: (photos) => set({ photos }),
   resetPhotos: () => set({ photos: [] }),
   toggleMirror: () => set((state) => ({ isMirror: !state.isMirror })),
   setTimerDuration: (timerDuration) => set({ timerDuration }),
   setCustomText: (customText) => set({ customText }),
   toggleDateStamp: () => set((state) => ({ showDateStamp: !state.showDateStamp })),
+  toggleVideoRecap: () => set((state) => ({ isVideoRecap: !state.isVideoRecap })),
 }));
