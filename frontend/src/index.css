@@ -1,0 +1,48 @@
+@import "tailwindcss";
+
+@layer base {
+  * {
+    box-sizing: border-box;
+  }
+  body {
+    font-family: 'Plus Jakarta Sans', system-ui, -apple-system, sans-serif;
+  }
+}
+
+/* Custom styles for Photobooth Studio */
+.glass-panel {
+  background: rgba(30, 41, 59, 0.7);
+  backdrop-filter: blur(12px);
+  border: 1px solid rgba(244, 114, 182, 0.2);
+}
+
+.glow-pink {
+  box-shadow: 0 0 25px -5px rgba(236, 72, 153, 0.5);
+}
+
+@keyframes flashAnimation {
+  0% { opacity: 0; }
+  50% { opacity: 1; }
+  100% { opacity: 0; }
+}
+
+.shutter-flash {
+  animation: flashAnimation 0.4s ease-out;
+}
+
+@media print {
+  body * {
+    visibility: hidden;
+  }
+  #printable-strip, #printable-strip * {
+    visibility: visible;
+  }
+  #printable-strip {
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 100%;
+    margin: 0;
+    padding: 0;
+  }
+}

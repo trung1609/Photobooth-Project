@@ -1,0 +1,25 @@
+# OS & Editors
+.DS_Store
+Thumbs.db
+*.log
+.idea/
+.vscode/
+*.iml
+
+# Node / Frontend
+node_modules/
+dist/
+.env.local
+.env.*.local
+npm-debug.log*
+
+# Java / Maven Backend
+target/
+*.class
+*.jar
+*.war
+.flattened-pom.xml
+
+# Storage uploads & Docker data
+uploads/
+postgres_data/
