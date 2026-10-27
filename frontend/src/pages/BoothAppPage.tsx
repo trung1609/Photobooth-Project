@@ -16,6 +16,7 @@ import { SAMPLE_FRAMES, FrameTemplate } from '../data/framesData';
 import { CustomizerStudio } from '../components/CustomizerStudio';
 import { ResultModal } from '../components/ResultModal';
 import { MobileSidebar } from '../components/MobileSidebar';
+import { generateFrameOverlaySvg } from '../utils/frameSvgGenerator';
 
 // Persistent global camera stream across steps to prevent Windows/Chrome webcam hardware lock
 let globalCameraStream: MediaStream | null = null;
@@ -204,25 +205,67 @@ export const BoothAppPage: React.FC = () => {
   const playSound = useCallback((type: 'beep' | 'shutter') => {
     try {
       const audioCtx = new (window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext)();
-      const osc = audioCtx.createOscillator();
-      const gain = audioCtx.createGain();
-      osc.connect(gain);
-      gain.connect(audioCtx.destination);
+      const now = audioCtx.currentTime;
 
       if (type === 'beep') {
-        osc.frequency.setValueAtTime(880, audioCtx.currentTime);
-        gain.gain.setValueAtTime(0.12, audioCtx.currentTime);
-        gain.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + 0.12);
-        osc.start();
-        osc.stop(audioCtx.currentTime + 0.12);
+        // Âm bíp ngắn khi đếm ngược 3... 2... 1...
+        const osc = audioCtx.createOscillator();
+        const gain = audioCtx.createGain();
+        osc.type = 'sine';
+        osc.frequency.setValueAtTime(880, now);
+        gain.gain.setValueAtTime(0.15, now);
+        gain.gain.exponentialRampToValueAtTime(0.001, now + 0.1);
+        osc.connect(gain);
+        gain.connect(audioCtx.destination);
+        osc.start(now);
+        osc.stop(now + 0.1);
       } else {
-        osc.type = 'triangle';
-        osc.frequency.setValueAtTime(220, audioCtx.currentTime);
-        osc.frequency.exponentialRampToValueAtTime(80, audioCtx.currentTime + 0.2);
-        gain.gain.setValueAtTime(0.25, audioCtx.currentTime);
-        gain.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.2);
-        osc.start();
-        osc.stop(audioCtx.currentTime + 0.2);
+        // Âm thanh khi chụp: 2 tiếng "BÍP! BÍP!" dễ thương kèm tiếng màn trập "TÁCH!"
+        // Tiếng bíp 1 (1046Hz - C6)
+        const beep1 = audioCtx.createOscillator();
+        const gain1 = audioCtx.createGain();
+        beep1.type = 'sine';
+        beep1.frequency.setValueAtTime(1046, now);
+        gain1.gain.setValueAtTime(0.18, now);
+        gain1.gain.exponentialRampToValueAtTime(0.001, now + 0.07);
+        beep1.connect(gain1);
+        gain1.connect(audioCtx.destination);
+        beep1.start(now);
+        beep1.stop(now + 0.07);
+
+        // Tiếng bíp 2 (1318Hz - E6 cao hơn, sau 85ms)
+        const beep2 = audioCtx.createOscillator();
+        const gain2 = audioCtx.createGain();
+        beep2.type = 'sine';
+        beep2.frequency.setValueAtTime(1318, now + 0.085);
+        gain2.gain.setValueAtTime(0.2, now + 0.085);
+        gain2.gain.exponentialRampToValueAtTime(0.001, now + 0.17);
+        beep2.connect(gain2);
+        gain2.connect(audioCtx.destination);
+        beep2.start(now + 0.085);
+        beep2.stop(now + 0.17);
+
+        // Tiếng tách màn trập máy ảnh (Camera mechanical snap sau 180ms)
+        const bufferSize = Math.floor(audioCtx.sampleRate * 0.08);
+        const buffer = audioCtx.createBuffer(1, bufferSize, audioCtx.sampleRate);
+        const data = buffer.getChannelData(0);
+        for (let i = 0; i < bufferSize; i++) {
+          data[i] = (Math.random() * 2 - 1) * Math.exp(-i / (audioCtx.sampleRate * 0.012));
+        }
+        const noise = audioCtx.createBufferSource();
+        noise.buffer = buffer;
+        const filterNode = audioCtx.createBiquadFilter();
+        filterNode.type = 'bandpass';
+        filterNode.frequency.setValueAtTime(2600, now + 0.18);
+        filterNode.Q.setValueAtTime(3, now + 0.18);
+        const gainNoise = audioCtx.createGain();
+        gainNoise.gain.setValueAtTime(0.28, now + 0.18);
+        gainNoise.gain.exponentialRampToValueAtTime(0.001, now + 0.26);
+        noise.connect(filterNode);
+        filterNode.connect(gainNoise);
+        gainNoise.connect(audioCtx.destination);
+        noise.start(now + 0.18);
+        noise.stop(now + 0.26);
       }
     } catch {
       // AudioContext muted/unsupported
@@ -429,17 +472,35 @@ export const BoothAppPage: React.FC = () => {
   };
 
   const handleSelectTemplate = (tpl: FrameTemplate) => {
+    const svgOverlay = generateFrameOverlaySvg(tpl, layout);
     setFrame({
       id: tpl.id,
       name: tpl.name,
       bgColor: tpl.bgColor,
       textColor: tpl.textColor,
       category: 'pastel',
-      overlayImage: tpl.previewImage || tpl.overlaySvg,
+      overlayImage: tpl.previewImage || svgOverlay,
     });
     setShowFrameModal(false);
     setShowFrameOverlay(true);
   };
+
+  // Ensure active frame always has a valid overlay applied to camera
+  useEffect(() => {
+    if (!frame.overlayImage) {
+      const matchTpl = SAMPLE_FRAMES.find((f) => f.id === frame.id || f.name === frame.name) || SAMPLE_FRAMES[0];
+      if (matchTpl) {
+        const svgOverlay = generateFrameOverlaySvg(matchTpl, layout);
+        setFrame({
+          ...frame,
+          name: matchTpl.name,
+          bgColor: matchTpl.bgColor,
+          textColor: matchTpl.textColor,
+          overlayImage: svgOverlay,
+        });
+      }
+    }
+  }, [frame, layout, setFrame]);
 
   const filteredModalFrames = SAMPLE_FRAMES.filter((f) => {
     const matchCat = frameCategory === 'all' || f.category === frameCategory;

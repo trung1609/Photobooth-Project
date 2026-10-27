@@ -2,7 +2,8 @@ import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Sparkles, Search, Camera } from 'lucide-react';
 import { SAMPLE_FRAMES, FrameTemplate } from '../data/framesData';
-import { useBoothStore, FRAME_PRESETS } from '../store/useBoothStore';
+import { useBoothStore } from '../store/useBoothStore';
+import { generateFrameOverlaySvg } from '../utils/frameSvgGenerator';
 
 export const FramesPage: React.FC = () => {
   const navigate = useNavigate();
@@ -30,17 +31,17 @@ export const FramesPage: React.FC = () => {
   });
 
   const handleSelectFrame = (template: FrameTemplate) => {
-    // Map template to booth store frame
-    const matchedPreset = FRAME_PRESETS.find((p) => p.id === template.id) || {
+    // Generate overlay SVG so frame applies directly to camera viewfinder and composite
+    const generatedOverlay = generateFrameOverlaySvg(template, template.layout);
+
+    setFrame({
       id: template.id,
       name: template.name,
       bgColor: template.bgColor,
       textColor: template.textColor,
       category: 'pastel',
-      overlayImage: template.previewImage,
-    };
-
-    setFrame(matchedPreset);
+      overlayImage: template.previewImage || generatedOverlay,
+    });
     setLayout(template.layout);
     setStep('capture');
     navigate('/app');
