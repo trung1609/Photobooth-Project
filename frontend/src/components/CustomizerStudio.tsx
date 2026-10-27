@@ -201,90 +201,97 @@ export const CustomizerStudio: React.FC = () => {
     ctx.drawImage(img, sx, sy, sWidth, sHeight, x, y, w, h);
   };
 
-  // Main Render to Canvas (both for live preview and export)
+  // Main Render to Canvas (Promise-based for 100% reliable high-res export)
   const renderCompositeCanvas = useCallback(
-    (canvas: HTMLCanvasElement, scale: number = 1) => {
-      const ctx = canvas.getContext('2d');
-      if (!ctx || photos.length === 0) return;
+    (canvas: HTMLCanvasElement, scale: number = 1): Promise<void> => {
+      return new Promise((resolve) => {
+        const ctx = canvas.getContext('2d');
+        if (!ctx || photos.length === 0) {
+          resolve();
+          return;
+        }
 
-      const singleStripW = 400 * scale;
-      const singleStripH = 1200 * scale;
+        const singleStripW = 400 * scale;
+        const singleStripH = 1200 * scale;
 
-      const totalCanvasW = stripColumns === 1 ? singleStripW : singleStripW * 2 + 16 * scale;
-      const totalCanvasH = singleStripH;
+        const totalCanvasW = stripColumns === 1 ? singleStripW : singleStripW * 2 + 16 * scale;
+        const totalCanvasH = singleStripH;
 
-      canvas.width = totalCanvasW;
-      canvas.height = totalCanvasH;
+        canvas.width = totalCanvasW;
+        canvas.height = totalCanvasH;
 
-      // Load all captured photos
-      const loadedPhotos: HTMLImageElement[] = [];
-      let pendingPhotos = photos.length;
+        // Load all captured photos
+        const loadedPhotos: HTMLImageElement[] = [];
+        let pendingPhotos = photos.length;
 
-      const executeRender = () => {
-        // Load overlay if custom frame uploaded or template has overlay
-        const overlaySrc = customUploadedFrame || selectedFrame.previewImage;
+        const executeRender = () => {
+          // Load overlay if custom frame uploaded or template has overlay
+          const overlaySrc = customUploadedFrame || selectedFrame.previewImage;
 
-        if (overlaySrc) {
-          const overlayImg = new Image();
-          overlayImg.crossOrigin = 'anonymous';
-          overlayImg.onload = () => {
-            drawAll(overlayImg);
-          };
-          overlayImg.onerror = () => {
+          if (overlaySrc) {
+            const overlayImg = new Image();
+            overlayImg.crossOrigin = 'anonymous';
+            overlayImg.onload = () => {
+              drawAll(overlayImg);
+            };
+            overlayImg.onerror = () => {
+              drawAll(null);
+            };
+            overlayImg.src = overlaySrc;
+          } else {
             drawAll(null);
+          }
+        };
+
+        const drawAll = (loadedOverlay: HTMLImageElement | null) => {
+          // Clear background
+          ctx.clearRect(0, 0, totalCanvasW, totalCanvasH);
+
+          if (stripColumns === 1) {
+            // 1 Cột Ảnh (Single Strip 1x4)
+            drawSingleStrip(ctx, 0, singleStripW, singleStripH, loadedPhotos, loadedOverlay);
+          } else {
+            // 2 Cột Ảnh (Double Strip 2x4 side-by-side)
+            // Strip 1 (Left)
+            drawSingleStrip(ctx, 0, singleStripW, singleStripH, loadedPhotos, loadedOverlay);
+
+            // Strip 2 (Right)
+            const secondX = singleStripW + 16 * scale;
+            drawSingleStrip(ctx, secondX, singleStripW, singleStripH, loadedPhotos, loadedOverlay);
+
+            // Dotted cut line down the center
+            ctx.save();
+            ctx.strokeStyle = '#cbd5e1';
+            ctx.lineWidth = 1 * scale;
+            ctx.setLineDash([6 * scale, 6 * scale]);
+            ctx.beginPath();
+            ctx.moveTo(singleStripW + 8 * scale, 0);
+            ctx.lineTo(singleStripW + 8 * scale, singleStripH);
+            ctx.stroke();
+            ctx.restore();
+          }
+
+          resolve();
+        };
+
+        photos.forEach((src, idx) => {
+          const img = new Image();
+          img.crossOrigin = 'anonymous';
+          img.onload = () => {
+            loadedPhotos[idx] = img;
+            pendingPhotos--;
+            if (pendingPhotos === 0) {
+              executeRender();
+            }
           };
-          overlayImg.src = overlaySrc;
-        } else {
-          drawAll(null);
-        }
-      };
-
-      const drawAll = (loadedOverlay: HTMLImageElement | null) => {
-        // Clear background
-        ctx.clearRect(0, 0, totalCanvasW, totalCanvasH);
-
-        if (stripColumns === 1) {
-          // 1 Cột Ảnh (Single Strip 1x4)
-          drawSingleStrip(ctx, 0, singleStripW, singleStripH, loadedPhotos, loadedOverlay);
-        } else {
-          // 2 Cột Ảnh (Double Strip 2x4 side-by-side)
-          // Strip 1 (Left)
-          drawSingleStrip(ctx, 0, singleStripW, singleStripH, loadedPhotos, loadedOverlay);
-
-          // Strip 2 (Right)
-          const secondX = singleStripW + 16 * scale;
-          drawSingleStrip(ctx, secondX, singleStripW, singleStripH, loadedPhotos, loadedOverlay);
-
-          // Dotted cut line down the center
-          ctx.save();
-          ctx.strokeStyle = '#cbd5e1';
-          ctx.lineWidth = 1 * scale;
-          ctx.setLineDash([6 * scale, 6 * scale]);
-          ctx.beginPath();
-          ctx.moveTo(singleStripW + 8 * scale, 0);
-          ctx.lineTo(singleStripW + 8 * scale, singleStripH);
-          ctx.stroke();
-          ctx.restore();
-        }
-      };
-
-      photos.forEach((src, idx) => {
-        const img = new Image();
-        img.crossOrigin = 'anonymous';
-        img.onload = () => {
-          loadedPhotos[idx] = img;
-          pendingPhotos--;
-          if (pendingPhotos === 0) {
-            executeRender();
-          }
-        };
-        img.onerror = () => {
-          pendingPhotos--;
-          if (pendingPhotos === 0) {
-            executeRender();
-          }
-        };
-        img.src = src;
+          img.onerror = () => {
+            pendingPhotos--;
+            if (pendingPhotos === 0) {
+              executeRender();
+            }
+          };
+          img.src = src;
+        });
       });
     },
     [photos, filter, selectedFrame, customUploadedFrame, stripColumns, showLogo, customCaption]
@@ -332,31 +339,103 @@ export const CustomizerStudio: React.FC = () => {
     reader.readAsDataURL(file);
   };
 
-  // Download high-resolution composite strip (300 DPI)
-  const handleDownload = () => {
-    const highResCanvas = document.createElement('canvas');
-    renderCompositeCanvas(highResCanvas, 3); // Scale 3x = ~1200x3600 px (300 DPI)
+  const [isDownloading, setIsDownloading] = useState(false);
+  const [downloadModalImage, setDownloadModalImage] = useState<string | null>(null);
 
-    setTimeout(() => {
-      const link = document.createElement('a');
-      link.download = `PhotoXinhh_${stripColumns === 1 ? '1cot' : '2cot'}_300DPI.jpg`;
-      link.href = highResCanvas.toDataURL('image/jpeg', 0.98);
-      link.click();
+  // Download high-resolution composite strip (300 DPI) with full Mobile Web Share & Direct Save support
+  const handleDownload = async () => {
+    if (isDownloading) return;
+    setIsDownloading(true);
 
-      // Confetti celebration
-      confetti({
-        particleCount: 90,
-        spread: 70,
-        origin: { y: 0.6 },
-        colors: ['#ec4899', '#f43f5e', '#a855f7', '#fb7185', '#38bdf8', '#ffffff'],
-      });
-    }, 150);
+    try {
+      const highResCanvas = document.createElement('canvas');
+      await renderCompositeCanvas(highResCanvas, 3); // Scale 3x = ~1200x3600 px (300 DPI)
+
+      highResCanvas.toBlob(
+        async (blob) => {
+          if (!blob) {
+            setIsDownloading(false);
+            return;
+          }
+
+          const fileName = `PhotoXinhh_${stripColumns === 1 ? '1cot' : '2cot'}_300DPI.jpg`;
+          const file = new File([blob], fileName, { type: 'image/jpeg' });
+          const dataUrl = highResCanvas.toDataURL('image/jpeg', 0.98);
+
+          // Confetti celebration
+          confetti({
+            particleCount: 90,
+            spread: 70,
+            origin: { y: 0.6 },
+            colors: ['#ec4899', '#f43f5e', '#a855f7', '#fb7185', '#38bdf8', '#ffffff'],
+          });
+
+          // 1. Mobile Web Share API: Native Save to Photos Sheet (iOS Safari & Android Chrome)
+          if (navigator.canShare && navigator.canShare({ files: [file] })) {
+            try {
+              await navigator.share({
+                files: [file],
+                title: 'PhotoXinhh Photobooth',
+                text: 'Dải ảnh PhotoXinhh xinh xắn của bạn ✨',
+              });
+              setIsDownloading(false);
+              return;
+            } catch (err) {
+              if ((err as Error).name !== 'AbortError') {
+                console.log('Share dismissed or fallback triggered');
+              }
+            }
+          }
+
+          // 2. Standard direct download link (Desktop and supported mobile browsers)
+          const url = URL.createObjectURL(blob);
+          const link = document.createElement('a');
+          link.href = url;
+          link.download = fileName;
+          document.body.appendChild(link);
+          link.click();
+          document.body.removeChild(link);
+          setTimeout(() => URL.revokeObjectURL(url), 3000);
+
+          // 3. Mobile Fallback Modal: Guarantees user can save on iOS/Android in-app browsers
+          const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
+          if (isMobile) {
+            setDownloadModalImage(dataUrl);
+          }
+
+          setIsDownloading(false);
+        },
+        'image/jpeg',
+        0.98
+      );
+    } catch (e) {
+      console.error('Download error:', e);
+      setIsDownloading(false);
+    }
   };
 
   // Reset session and return to camera
   const handleResetToCamera = () => {
     resetPhotos();
     setStep('capture');
+  };
+
+  const handleShareModalImage = async () => {
+    if (!downloadModalImage) return;
+    try {
+      const res = await fetch(downloadModalImage);
+      const blob = await res.blob();
+      const file = new File([blob], 'PhotoXinhh_300DPI.jpg', { type: 'image/jpeg' });
+      if (navigator.canShare && navigator.canShare({ files: [file] })) {
+        await navigator.share({
+          files: [file],
+          title: 'PhotoXinhh',
+          text: 'Dải ảnh Photobooth PhotoXinhh',
+        });
+      }
+    } catch (e) {
+      console.log(e);
+    }
   };
 
   return (
@@ -473,10 +552,13 @@ export const CustomizerStudio: React.FC = () => {
             {/* Big Action: [ 📥 Tải ảnh ] */}
             <button
               onClick={handleDownload}
-              className="w-full max-w-xs flex items-center justify-center gap-2 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-bold text-sm shadow-md hover:shadow-blue-500/25 active:scale-95 transition cursor-pointer"
+              disabled={isDownloading}
+              className={`w-full max-w-xs flex items-center justify-center gap-2 py-2.5 rounded-xl text-white font-bold text-sm shadow-md transition cursor-pointer active:scale-95 ${
+                isDownloading ? 'bg-blue-400 cursor-not-allowed' : 'bg-blue-600 hover:bg-blue-700 hover:shadow-blue-500/25'
+              }`}
             >
-              <Download className="w-4 h-4" />
-              <span>Tải ảnh</span>
+              <Download className={`w-4 h-4 ${isDownloading ? 'animate-bounce' : ''}`} />
+              <span>{isDownloading ? 'Đang xuất ảnh 300 DPI...' : 'Tải ảnh'}</span>
             </button>
 
             {/* Return to Camera / Chụp Lại */}
@@ -652,6 +734,58 @@ export const CustomizerStudio: React.FC = () => {
           </div>
         </div>
       </div>
+
+      {/* Mobile Save & Download Modal */}
+      {downloadModalImage && (
+        <div className="fixed inset-0 z-50 bg-black/75 backdrop-blur-xs flex items-center justify-center p-4 animate-in fade-in">
+          <div className="bg-white rounded-3xl max-w-sm w-full p-4 flex flex-col items-center space-y-3.5 shadow-2xl border border-pink-100">
+            <div className="w-full flex items-center justify-between pb-1 border-b border-gray-100">
+              <span className="font-extrabold text-sm text-pink-600">Dải Ảnh Đã Sẵn Sàng! ✨</span>
+              <button
+                onClick={() => setDownloadModalImage(null)}
+                className="w-7 h-7 rounded-full bg-gray-100 hover:bg-gray-200 text-gray-500 flex items-center justify-center transition cursor-pointer"
+              >
+                ✕
+              </button>
+            </div>
+
+            {/* Instruction Tip */}
+            <div className="w-full bg-amber-50 border border-amber-200 rounded-xl p-2.5 text-center">
+              <p className="text-[11px] font-semibold text-amber-800 leading-tight">
+                📱 <strong>Trên điện thoại:</strong> Chạm và giữ vào ảnh dưới đây, chọn <strong>&quot;Lưu hình ảnh&quot;</strong> (Save Image) để lưu vào Thư Viện Ảnh (Camera Roll).
+              </p>
+            </div>
+
+            {/* High Res Rendered Image */}
+            <div className="max-h-[50vh] overflow-y-auto rounded-xl border border-gray-200 shadow-xs p-1 bg-gray-50 flex items-center justify-center">
+              <img
+                src={downloadModalImage}
+                alt="PhotoXinhh Finished Strip"
+                className="max-h-[46vh] w-auto object-contain rounded-lg shadow-sm"
+              />
+            </div>
+
+            {/* Actions */}
+            <div className="w-full space-y-2 pt-1">
+              <button
+                type="button"
+                onClick={handleShareModalImage}
+                className="w-full flex items-center justify-center gap-2 py-2.5 rounded-xl bg-gradient-to-r from-pink-500 to-purple-600 hover:from-pink-600 hover:to-purple-700 text-white font-bold text-xs shadow-md active:scale-95 transition cursor-pointer"
+              >
+                <span>Mở Bảng Lưu / Chia Sẻ (Share Sheet)</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setDownloadModalImage(null)}
+                className="w-full py-2 rounded-xl bg-gray-100 hover:bg-gray-200 text-gray-600 font-semibold text-xs transition cursor-pointer"
+              >
+                Đóng
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
