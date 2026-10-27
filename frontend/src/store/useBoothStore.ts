@@ -44,7 +44,7 @@ interface BoothState {
 export const useBoothStore = create<BoothState>((set) => ({
   step: 'capture', // Default directly to the photo capture screen!
   layout: '1x4_strip',
-  filter: 'normal',
+  filter: 'cool_pink',
   frame: FRAME_PRESETS[1], // Default pastel pink
   photos: [],
   activeSlotIndex: 0,

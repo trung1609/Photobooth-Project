@@ -87,18 +87,27 @@ export const ResultModal: React.FC = () => {
               });
 
               ctx.filter = 'none';
-              ctx.fillStyle = frame.textColor;
-              ctx.textAlign = 'center';
-              ctx.textBaseline = 'middle';
-              ctx.font = 'bold 44px "Plus Jakarta Sans", sans-serif';
-              ctx.fillText(customText, startX + singleStripWidth / 2, baseHeight - 140);
+              if (frame.overlayImage) {
+                const overlayImg = new Image();
+                overlayImg.crossOrigin = 'anonymous';
+                overlayImg.onload = () => {
+                  ctx.drawImage(overlayImg, startX, 0, singleStripWidth, baseHeight);
+                };
+                overlayImg.src = frame.overlayImage;
+              } else {
+                ctx.fillStyle = frame.textColor;
+                ctx.textAlign = 'center';
+                ctx.textBaseline = 'middle';
+                ctx.font = 'bold 44px "Plus Jakarta Sans", sans-serif';
+                ctx.fillText(customText, startX + singleStripWidth / 2, baseHeight - 140);
 
-              if (showDateStamp) {
-                const today = new Date().toISOString().slice(0, 10).replace(/-/g, '.');
-                ctx.font = '600 30px "Plus Jakarta Sans", sans-serif';
-                ctx.globalAlpha = 0.75;
-                ctx.fillText(`${today} • PHOTOXINHH`, startX + singleStripWidth / 2, baseHeight - 75);
-                ctx.globalAlpha = 1.0;
+                if (showDateStamp) {
+                  const today = new Date().toISOString().slice(0, 10).replace(/-/g, '.');
+                  ctx.font = '600 30px "Plus Jakarta Sans", sans-serif';
+                  ctx.globalAlpha = 0.75;
+                  ctx.fillText(`${today} • PHOTOXINHH`, startX + singleStripWidth / 2, baseHeight - 75);
+                  ctx.globalAlpha = 1.0;
+                }
               }
             });
           } else if (isGrid) {
@@ -268,9 +277,9 @@ export const ResultModal: React.FC = () => {
       <button
         onClick={() => {
           resetPhotos();
-          setStep('select_layout');
+          setStep('capture');
         }}
-        className="flex items-center gap-1.5 text-xs font-medium text-gray-500 hover:text-pink-600 transition"
+        className="flex items-center gap-1.5 text-xs font-medium text-gray-500 hover:text-pink-600 transition cursor-pointer"
       >
         <RotateCcw className="w-3.5 h-3.5" />
         <span>Chụp Lại Phiên Mới</span>

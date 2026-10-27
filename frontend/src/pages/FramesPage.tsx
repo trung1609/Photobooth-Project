@@ -13,26 +13,31 @@ export const FramesPage: React.FC = () => {
 
   const categories = [
     { id: 'all', label: 'Tất Cả' },
-    { id: 'hot_trend', label: 'Hot Trend 2026' },
-    { id: 'idol', label: 'Idol K-Pop' },
     { id: 'cute', label: 'Cute & Pastel' },
-    { id: 'retro', label: 'Retro Film' },
+    { id: 'kpop', label: 'Idol K-Pop' },
+    { id: 'cartoon', label: 'Hoạt Hình & Anime' },
+    { id: 'retro', label: 'Retro & Vintage' },
+    { id: 'basic', label: 'Khung Cơ Bản' },
   ];
 
   const filteredFrames = SAMPLE_FRAMES.filter((f) => {
     const matchCat = activeCategory === 'all' || f.category === activeCategory;
-    const matchSearch = f.name.toLowerCase().includes(searchQuery.toLowerCase());
+    const matchSearch =
+      f.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      (f.author && f.author.toLowerCase().includes(searchQuery.toLowerCase())) ||
+      (f.badge && f.badge.toLowerCase().includes(searchQuery.toLowerCase()));
     return matchCat && matchSearch;
   });
 
   const handleSelectFrame = (template: FrameTemplate) => {
     // Map template to booth store frame
-    const matchedPreset = FRAME_PRESETS.find((p) => p.bgColor === template.bgColor) || {
+    const matchedPreset = FRAME_PRESETS.find((p) => p.id === template.id) || {
       id: template.id,
       name: template.name,
       bgColor: template.bgColor,
       textColor: template.textColor,
       category: 'pastel',
+      overlayImage: template.previewImage,
     };
 
     setFrame(matchedPreset);
@@ -66,7 +71,7 @@ export const FramesPage: React.FC = () => {
               <button
                 key={cat.id}
                 onClick={() => setActiveCategory(cat.id)}
-                className={`px-4 py-2 rounded-full text-xs font-bold whitespace-nowrap transition ${
+                className={`px-4 py-2 rounded-full text-xs font-bold whitespace-nowrap transition cursor-pointer ${
                   activeCategory === cat.id
                     ? 'bg-pink-500 text-white shadow-sm'
                     : 'bg-gray-100 text-gray-600 hover:bg-pink-50 hover:text-pink-600'
@@ -79,7 +84,7 @@ export const FramesPage: React.FC = () => {
 
           {/* Search Input */}
           <div className="relative w-full sm:w-64">
-            <Search className="w-4 h-4 text-gray-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
+            <Search className="w-4 h-4 text-pink-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
             <input
               type="text"
               value={searchQuery}
@@ -97,20 +102,59 @@ export const FramesPage: React.FC = () => {
               key={frame.id}
               className="bg-white rounded-3xl overflow-hidden border border-pink-100 shadow-md hover:shadow-xl hover:-translate-y-1.5 transition-all duration-300 flex flex-col justify-between group"
             >
-              <div className="relative aspect-[3/4] overflow-hidden bg-slate-900 flex items-center justify-center p-3">
-                <img
-                  src={frame.previewImage}
-                  alt={frame.name}
-                  className="w-full h-full object-contain rounded-xl group-hover:scale-105 transition-transform duration-500"
-                />
+              {/* Frame Card Preview Area (No more broken images / dark backgrounds) */}
+              <div className="relative aspect-[3/4] overflow-hidden bg-gradient-to-b from-pink-50/70 via-purple-50/30 to-pink-50/70 flex items-center justify-center p-4">
+                {frame.previewImage ? (
+                  <img
+                    src={frame.previewImage}
+                    alt={frame.name}
+                    className="max-h-full max-w-full object-contain rounded-xl shadow-md group-hover:scale-105 transition-transform duration-300"
+                  />
+                ) : (
+                  /* High fidelity 1x4 Photobooth Strip Mockup */
+                  <div
+                    className="w-36 h-full max-h-[300px] rounded-xl p-2 flex flex-col justify-between shadow-lg border border-black/10 group-hover:scale-105 transition-transform duration-300 overflow-hidden"
+                    style={{ backgroundColor: frame.bgColor }}
+                  >
+                    {/* Header preview */}
+                    <div
+                      className="text-[9px] font-extrabold text-center truncate pt-0.5 leading-tight"
+                      style={{ color: frame.textColor }}
+                    >
+                      {frame.headerEmoji || frame.name}
+                    </div>
 
+                    {/* 4 Photo Cutout Slots */}
+                    <div className="flex-1 my-2 flex flex-col justify-between gap-1.5">
+                      {Array.from({ length: 4 }).map((_, i) => (
+                        <div
+                          key={i}
+                          className="w-full flex-1 rounded-sm bg-white/85 border border-black/10 flex items-center justify-center text-[9px] text-gray-400 font-bold shadow-2xs"
+                        >
+                          {i + 1}
+                        </div>
+                      ))}
+                    </div>
+
+                    {/* Footer preview */}
+                    <div
+                      className="text-[8px] font-semibold text-center truncate pb-0.5 leading-tight opacity-80"
+                      style={{ color: frame.textColor }}
+                    >
+                      {frame.footerEmoji || 'PhotoXinhh'}
+                    </div>
+                  </div>
+                )}
+
+                {/* Badge (e.g. HOT, APPLE, NEWS, PIXAR, RAP, ARMY) */}
                 {frame.badge && (
-                  <div className="absolute top-4 left-4 px-2.5 py-1 rounded-full bg-pink-500 text-white font-extrabold text-[10px] tracking-wider uppercase shadow-md">
+                  <div className="absolute top-4 left-4 px-2.5 py-1 rounded-full bg-pink-500 text-white font-extrabold text-[10px] tracking-wider uppercase shadow-md z-10">
                     {frame.badge}
                   </div>
                 )}
               </div>
 
+              {/* Card Meta & Action */}
               <div className="p-5 flex flex-col gap-3">
                 <div className="flex items-center justify-between">
                   <h3 className="font-extrabold text-base text-gray-900 group-hover:text-pink-600 transition">
@@ -135,7 +179,7 @@ export const FramesPage: React.FC = () => {
 
                 <button
                   onClick={() => handleSelectFrame(frame)}
-                  className="w-full mt-2 flex items-center justify-center gap-2 py-3 rounded-2xl bg-gradient-to-r from-pink-500 to-purple-600 text-white font-bold text-xs hover:shadow-lg hover:shadow-pink-500/25 transition active:scale-95"
+                  className="w-full mt-2 flex items-center justify-center gap-2 py-3 rounded-2xl bg-gradient-to-r from-pink-500 to-purple-600 text-white font-bold text-xs hover:shadow-lg hover:shadow-pink-500/25 transition active:scale-95 cursor-pointer"
                 >
                   <Camera className="w-4 h-4" />
                   <span>Chụp Ngay Với Khung Này</span>
@@ -155,7 +199,7 @@ export const FramesPage: React.FC = () => {
           </div>
           <button
             onClick={() => navigate('/privateframe')}
-            className="px-8 py-3.5 rounded-full bg-white text-pink-600 font-extrabold text-sm hover:bg-pink-50 hover:scale-105 active:scale-95 transition shadow-lg whitespace-nowrap"
+            className="px-8 py-3.5 rounded-full bg-white text-pink-600 font-extrabold text-sm hover:bg-pink-50 hover:scale-105 active:scale-95 transition shadow-lg whitespace-nowrap cursor-pointer"
           >
             Hướng Dẫn & Tải Khung Lên
           </button>

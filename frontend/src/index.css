@@ -30,6 +30,21 @@
   animation: flashAnimation 0.3s ease-out;
 }
 
+/* Hide scrollbar for clean mobile horizontal touch scrolling */
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+.no-scrollbar {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
+/* Instant tap response on mobile devices without 300ms delay */
+button, select, label, input {
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
+}
+
 @media print {
   body * {
     visibility: hidden;
