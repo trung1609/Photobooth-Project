@@ -9,7 +9,7 @@ export const BoothAppPage: React.FC = () => {
   const { step } = useBoothStore();
 
   return (
-    <div className="min-h-[calc(100vh-140px)] flex flex-col justify-center py-6 bg-slate-900 text-slate-100">
+    <div className="min-h-[calc(100vh-130px)] flex flex-col justify-center py-6 bg-gradient-to-br from-pink-50/60 via-white to-purple-50/40 text-gray-800">
       {step === 'select_layout' && <LayoutSelector />}
       {step === 'capture' && <CameraStudio />}
       {step === 'customize' && <CustomizerStudio />}
