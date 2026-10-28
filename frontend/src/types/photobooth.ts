@@ -1,6 +1,6 @@
-export type LayoutType = '1x4_strip' | '2x2_grid' | 'polaroid';
+export type LayoutType = '1x4_strip' | '2x2_grid' | 'polaroid' | 'collage_6';
 
-export type FilterType = 'normal' | 'cool_pink' | 'cool_white' | 'korean_glow' | 'bw' | 'vintage' | 'warm_retro' | 'cool_cyber';
+export type FilterType = 'normal' | 'korean_glow' | 'vintage' | 'cinematic' | 'bw';
 
 export interface PhotoSlot {
   id: number;

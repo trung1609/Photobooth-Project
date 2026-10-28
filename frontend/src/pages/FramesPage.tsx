@@ -172,7 +172,7 @@ export const FramesPage: React.FC = () => {
                   <span>
                     Bố cục:{' '}
                     <strong className="text-gray-800">
-                      {frame.layout === '1x4_strip' ? 'Dải 4 ô (1x4)' : frame.layout === '2x2_grid' ? 'Lưới vuông (2x2)' : 'Polaroid'}
+                      {frame.layout === '1x4_strip' ? 'Dải 4 ô (1x4)' : frame.layout === '2x2_grid' ? 'Lưới vuông (2x2)' : frame.layout === 'collage_6' ? 'Collage (6 ảnh)' : 'Polaroid'}
                     </strong>
                   </span>
                   <span>{frame.author}</span>

@@ -28,6 +28,13 @@ export const LayoutSelector: React.FC = () => {
       icon: <Sparkles className="w-6 h-6 text-amber-500" />,
       count: 1,
     },
+    {
+      id: 'collage_6',
+      name: 'Collage 6 Ảnh (Bong Bóng)',
+      desc: '1 ảnh lớn + 2 ảnh bên phải + 3 ảnh Polaroid phong cách nghệ thuật',
+      icon: <Sparkles className="w-6 h-6 text-rose-500" />,
+      count: 6,
+    },
   ];
 
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -35,7 +42,7 @@ export const LayoutSelector: React.FC = () => {
     if (!files || files.length === 0) return;
 
     const uploadedUrls: string[] = [];
-    const maxPhotos = layout === 'polaroid' ? 1 : 4;
+    const maxPhotos = layout === 'polaroid' ? 1 : layout === 'collage_6' ? 6 : 4;
     const filesToRead = Array.from(files).slice(0, maxPhotos);
 
     let readCount = 0;
@@ -70,7 +77,7 @@ export const LayoutSelector: React.FC = () => {
       </p>
 
       {/* Layout Selection Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-5 w-full mb-8">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 w-full mb-8">
         {layouts.map((item) => {
           const isSelected = layout === item.id;
           return (

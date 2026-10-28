@@ -8,7 +8,9 @@ import {
   Menu,
   X,
   ArrowRight,
-  Search
+  Search,
+  Crop,
+  Video
 } from 'lucide-react';
 import { useBoothStore } from '../store/useBoothStore';
 import { LayoutType, FilterType } from '../types/photobooth';
@@ -16,7 +18,15 @@ import { SAMPLE_FRAMES, FrameTemplate } from '../data/framesData';
 import { CustomizerStudio } from '../components/CustomizerStudio';
 import { ResultModal } from '../components/ResultModal';
 import { MobileSidebar } from '../components/MobileSidebar';
+import { ImageCropperModal } from '../components/ImageCropperModal';
 import { generateFrameOverlaySvg } from '../utils/frameSvgGenerator';
+import {
+  FACE_FILTERS,
+  FaceFilterType,
+  drawFaceFilterToCanvas
+} from '../utils/faceFilterEngine';
+import { FaceFilterCameraOverlay } from '../components/FaceFilterCameraOverlay';
+import { RealtimeFaceTracker } from '../utils/faceTracker';
 
 // Persistent global camera stream across steps to prevent Windows/Chrome webcam hardware lock
 let globalCameraStream: MediaStream | null = null;
@@ -111,52 +121,34 @@ const IconEmptyPhotoSlot = () => (
 
 const FILTERS: { id: FilterType; label: string; desc: string; cssFilter: string }[] = [
   {
-    id: 'cool_pink',
-    label: 'Hồng Lạnh',
-    desc: 'Trắng hồng phớt nhẹ, nịnh da',
-    cssFilter: 'brightness(1.07) contrast(1.04) saturate(1.025) hue-rotate(-3.5deg)'
-  },
-  {
-    id: 'cool_white',
-    label: 'Trắng Lạnh',
-    desc: 'Trắng trong sáng nét, khử sạch vàng',
-    cssFilter: 'brightness(1.06) contrast(1.06) saturate(1.02) hue-rotate(-3deg)'
-  },
-  {
     id: 'korean_glow',
-    label: 'Mềm Mại',
-    desc: 'Da mịn Hàn Quốc',
-    cssFilter: 'brightness(1.08) contrast(1.02) saturate(1.05) hue-rotate(-5deg)'
-  },
-  {
-    id: 'normal',
-    label: 'Bình Thường',
-    desc: 'Gốc camera',
-    cssFilter: 'none'
+    label: 'Tone Tươi Sáng / Ngọt Ngào',
+    desc: 'Giúp da sáng hơn, màu sắc rực rỡ và phù hợp với phong cách Hàn Quốc dễ thương',
+    cssFilter: 'brightness(1.08) contrast(1.04) saturate(1.12) hue-rotate(-4deg)'
   },
   {
     id: 'vintage',
-    label: 'Mono (Retro)',
-    desc: 'Film hoài niệm',
-    cssFilter: 'sepia(25%) contrast(1.08) brightness(0.98)'
+    label: 'Tone Vintage / Cổ Điển',
+    desc: 'Mang lại cảm giác hoài niệm, màu phim cũ (như 35mm, Kodak, Sepia)',
+    cssFilter: 'sepia(25%) contrast(1.08) saturate(1.15) brightness(1.02) hue-rotate(-8deg)'
+  },
+  {
+    id: 'cinematic',
+    label: 'Tone Điện Ảnh (Cinematic)',
+    desc: 'Tạo chiều sâu, tương phản cao, thích hợp khi mặc trang phục tối hoặc vest',
+    cssFilter: 'contrast(1.22) brightness(0.96) saturate(1.08) hue-rotate(6deg)'
   },
   {
     id: 'bw',
-    label: 'Đen Trắng',
-    desc: 'Studio cổ điển',
-    cssFilter: 'grayscale(100%) contrast(1.2) brightness(1.03)'
+    label: 'Đen Trắng (Black & White)',
+    desc: 'Tạo nét tối giản, vượt thời gian và làm nổi bật hình khối',
+    cssFilter: 'grayscale(100%) contrast(1.25) brightness(1.02)'
   },
   {
-    id: 'warm_retro',
-    label: 'Dazz Classic',
-    desc: 'Vintage ấm áp',
-    cssFilter: 'sepia(18%) saturate(1.15) hue-rotate(-8deg) brightness(1.03)'
-  },
-  {
-    id: 'cool_cyber',
-    label: 'Dazz Instant',
-    desc: 'Sắc lạnh hiện đại',
-    cssFilter: 'contrast(1.12) hue-rotate(15deg) saturate(1.15)'
+    id: 'normal',
+    label: 'Bình Thường (Gốc)',
+    desc: 'Camera chân thực tự nhiên, không áp dụng hiệu ứng',
+    cssFilter: 'none'
   },
 ];
 
@@ -179,12 +171,86 @@ export const BoothAppPage: React.FC = () => {
     toggleMirror,
     isVideoRecap,
     toggleVideoRecap,
+    recapVideoUrl,
+    setRecapVideoUrl,
     step,
     setStep
   } = useBoothStore();
 
-  const totalRequired = layout === 'polaroid' ? 1 : 4;
+  const totalRequired = layout === 'polaroid' ? 1 : layout === 'collage_6' ? 6 : 4;
   const videoRef = useRef<HTMLVideoElement>(null);
+
+  // Background MediaRecorder for Video Recap
+  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+  const recordedChunksRef = useRef<Blob[]>([]);
+  const recapCanvasRef = useRef<HTMLCanvasElement | null>(null);
+  const recapAnimIdRef = useRef<number | null>(null);
+  const isRecapRunningRef = useRef<boolean>(false);
+  const [isRecordingRecap, setIsRecordingRecap] = useState(false);
+
+  // Image Cropper Modal State
+  const [cropModalData, setCropModalData] = useState<{
+    isOpen: boolean;
+    imageSrc: string | null;
+    targetSlotIndex: number;
+    pendingQueue: string[];
+  }>({
+    isOpen: false,
+    imageSrc: null,
+    targetSlotIndex: 0,
+    pendingQueue: [],
+  });
+
+  // Face Filter AR State (Tai thỏ, Vương miện, Mèo, Gấu, Kính trái tim...)
+  const [faceFilter, setFaceFilter] = useState<FaceFilterType>('none');
+  const [faceFilterPos, setFaceFilterPos] = useState<{ x: number; y: number; scale: number; hasFace?: boolean }>({
+    x: 0.5,
+    y: 0.38,
+    scale: 1.0,
+    hasFace: false,
+  });
+  const faceTrackerRef = useRef<RealtimeFaceTracker | null>(null);
+
+  // TikTok-Style Realtime Face Tracking Effect
+  useEffect(() => {
+    if (faceFilter === 'none') {
+      if (faceTrackerRef.current) {
+        faceTrackerRef.current.stop();
+        faceTrackerRef.current = null;
+      }
+      return;
+    }
+
+    if (!faceTrackerRef.current) {
+      faceTrackerRef.current = new RealtimeFaceTracker();
+    }
+
+    const tracker = faceTrackerRef.current;
+    let checkInterval: any = null;
+
+    const startTracker = () => {
+      if (videoRef.current && videoRef.current.readyState >= 2) {
+        tracker.start(videoRef.current, isMirror, (pos) => {
+          setFaceFilterPos(pos);
+        });
+        if (checkInterval) {
+          clearInterval(checkInterval);
+          checkInterval = null;
+        }
+      }
+    };
+
+    if (videoRef.current && videoRef.current.readyState >= 2) {
+      startTracker();
+    } else {
+      checkInterval = setInterval(startTracker, 250);
+    }
+
+    return () => {
+      if (checkInterval) clearInterval(checkInterval);
+      tracker.stop();
+    };
+  }, [faceFilter, isMirror]);
 
   const [isCountingDown, setIsCountingDown] = useState(false);
   const [countdown, setCountdown] = useState<number>(timerDuration);
@@ -330,6 +396,140 @@ export const BoothAppPage: React.FC = () => {
     }
   });
 
+  // Background MediaRecorder controls for Video Recap with beauty grading
+  const startRecapRecording = useCallback(() => {
+    if (!isVideoRecap) return;
+    if (!globalCameraStream || !globalCameraStream.active) return;
+    if (mediaRecorderRef.current && mediaRecorderRef.current.state === 'recording') return;
+
+    try {
+      recordedChunksRef.current = [];
+
+      // Create or reuse offscreen beauty canvas
+      if (!recapCanvasRef.current) {
+        recapCanvasRef.current = document.createElement('canvas');
+      }
+      const recapCanvas = recapCanvasRef.current;
+      const video = videoRef.current;
+      const w = video?.videoWidth || 1280;
+      const h = video?.videoHeight || 720;
+      recapCanvas.width = w;
+      recapCanvas.height = h;
+
+      isRecapRunningRef.current = true;
+
+      // Realtime Beautifying Render Loop:
+      // Tăng sáng tự nhiên, tăng độ bão hòa tươi tắn, triệt tiêu ám vàng/ám xanh của webcam
+      const renderRecapFrame = () => {
+        if (!isRecapRunningRef.current) return;
+        const v = videoRef.current;
+        if (v && v.readyState >= 2) {
+          const ctx = recapCanvas.getContext('2d');
+          if (ctx) {
+            ctx.save();
+            if (isMirror) {
+              ctx.translate(recapCanvas.width, 0);
+              ctx.scale(-1, 1);
+            }
+
+            // Bộ lọc xử lý màu: Tươi sáng, mịn màng, khử sạch ám vàng/xanh
+            let filterStr = 'brightness(1.12) contrast(1.05) saturate(1.18) hue-rotate(-4deg)';
+            if (filter === 'korean_glow') {
+              filterStr = 'brightness(1.14) contrast(1.05) saturate(1.20) hue-rotate(-4deg)';
+            } else if (filter === 'vintage') {
+              filterStr = 'sepia(22%) contrast(1.08) saturate(1.18) brightness(1.06) hue-rotate(-6deg)';
+            } else if (filter === 'cinematic') {
+              filterStr = 'contrast(1.20) brightness(1.02) saturate(1.12) hue-rotate(4deg)';
+            } else if (filter === 'bw') {
+              filterStr = 'grayscale(100%) contrast(1.22) brightness(1.06)';
+            } else {
+              // Gốc (Normal): Nâng sáng và khử ám vàng webcam nhẹ để video lung linh
+              filterStr = 'brightness(1.10) contrast(1.04) saturate(1.12) hue-rotate(-3.5deg)';
+            }
+
+            ctx.filter = filterStr;
+            ctx.drawImage(v, 0, 0, recapCanvas.width, recapCanvas.height);
+            ctx.filter = 'none';
+
+            // Draw Face AR Filter onto video recap
+            if (faceFilter !== 'none') {
+              drawFaceFilterToCanvas(ctx, faceFilter, recapCanvas.width, recapCanvas.height, faceFilterPos);
+            }
+
+            ctx.restore();
+          }
+        }
+        recapAnimIdRef.current = requestAnimationFrame(renderRecapFrame);
+      };
+
+      // Draw initial frame
+      renderRecapFrame();
+
+      // Capture processed beautified stream from canvas
+      const streamToRecord =
+        typeof recapCanvas.captureStream === 'function'
+          ? recapCanvas.captureStream(30)
+          : globalCameraStream;
+
+      let mimeType = 'video/webm;codecs=vp9';
+      if (!MediaRecorder.isTypeSupported(mimeType)) {
+        mimeType = 'video/webm;codecs=vp8';
+      }
+      if (!MediaRecorder.isTypeSupported(mimeType)) {
+        mimeType = 'video/webm';
+      }
+      if (!MediaRecorder.isTypeSupported(mimeType)) {
+        mimeType = '';
+      }
+
+      const options: MediaRecorderOptions = mimeType ? { mimeType } : {};
+      const recorder = new MediaRecorder(streamToRecord, options);
+
+      recorder.ondataavailable = (event) => {
+        if (event.data && event.data.size > 0) {
+          recordedChunksRef.current.push(event.data);
+        }
+      };
+
+      recorder.onstop = () => {
+        setIsRecordingRecap(false);
+        isRecapRunningRef.current = false;
+        if (recapAnimIdRef.current) {
+          cancelAnimationFrame(recapAnimIdRef.current);
+          recapAnimIdRef.current = null;
+        }
+        if (recordedChunksRef.current.length > 0) {
+          const finalType = mimeType || 'video/webm';
+          const blob = new Blob(recordedChunksRef.current, { type: finalType });
+          const url = URL.createObjectURL(blob);
+          setRecapVideoUrl(url);
+        }
+      };
+
+      recorder.start(1000);
+      mediaRecorderRef.current = recorder;
+      setIsRecordingRecap(true);
+    } catch (err) {
+      console.warn('MediaRecorder error:', err);
+    }
+  }, [isVideoRecap, isMirror, filter, faceFilter, faceFilterPos, setRecapVideoUrl]);
+
+  const stopRecapRecording = useCallback(() => {
+    isRecapRunningRef.current = false;
+    if (recapAnimIdRef.current) {
+      cancelAnimationFrame(recapAnimIdRef.current);
+      recapAnimIdRef.current = null;
+    }
+    if (mediaRecorderRef.current && mediaRecorderRef.current.state === 'recording') {
+      try {
+        mediaRecorderRef.current.stop();
+      } catch (err) {
+        console.warn('Error stopping MediaRecorder:', err);
+      }
+    }
+    setIsRecordingRecap(false);
+  }, []);
+
   // Take snapshot with filter applied directly (Ultra High Definition & Lossless PNG)
   const takeSnapshot = useCallback(() => {
     if (!videoRef.current) return;
@@ -363,6 +563,12 @@ export const BoothAppPage: React.FC = () => {
 
     ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
 
+    // Apply active Face AR filter directly onto snapshot (Lossless & High-DPI)
+    if (faceFilter !== 'none') {
+      ctx.filter = 'none';
+      drawFaceFilterToCanvas(ctx, faceFilter, canvas.width, canvas.height, faceFilterPos);
+    }
+
     setIsFlashing(true);
     playSound('shutter');
     setTimeout(() => setIsFlashing(false), 250);
@@ -370,17 +576,28 @@ export const BoothAppPage: React.FC = () => {
     // Lưu ảnh dạng Lossless PNG chống vỡ hạt và triệt tiêu hoàn toàn suy hao nén kép
     const dataUrl = canvas.toDataURL('image/png');
     addPhoto(dataUrl);
-  }, [isMirror, playSound, addPhoto, currentFilterObj]);
+
+    // If reaching required photos, stop video recording
+    if (photos.length + 1 >= totalRequired) {
+      stopRecapRecording();
+    }
+  }, [isMirror, playSound, addPhoto, currentFilterObj, photos.length, totalRequired, stopRecapRecording, faceFilter, faceFilterPos]);
 
   // Single Manual Shot (Chụp tay)
   const handleManualShot = () => {
     if (photos.length >= totalRequired) return;
+    if (isVideoRecap && (!mediaRecorderRef.current || mediaRecorderRef.current.state !== 'recording')) {
+      startRecapRecording();
+    }
     takeSnapshot();
   };
 
   // Auto Countdown Burst Shot (AUTO)
   const handleAutoCapture = () => {
     if (isCountingDown || photos.length >= totalRequired) return;
+    if (isVideoRecap && (!mediaRecorderRef.current || mediaRecorderRef.current.state !== 'recording')) {
+      startRecapRecording();
+    }
     setIsAutoSequence(true);
     setIsCountingDown(true);
     setCountdown(timerDuration);
@@ -420,6 +637,34 @@ export const BoothAppPage: React.FC = () => {
     }
   }, [isCountingDown, countdown, isAutoSequence, photos.length, totalRequired, timerDuration, playSound, takeSnapshot, setStep]);
 
+  // Confirm crop handler
+  const handleConfirmCrop = (croppedDataUrl: string) => {
+    const { targetSlotIndex, pendingQueue } = cropModalData;
+    if (targetSlotIndex < photos.length) {
+      updatePhotoAtSlot(targetSlotIndex, croppedDataUrl);
+    } else {
+      addPhoto(croppedDataUrl);
+    }
+
+    if (pendingQueue && pendingQueue.length > 0 && photos.length + 1 < totalRequired) {
+      const nextImg = pendingQueue[0];
+      const rest = pendingQueue.slice(1);
+      setCropModalData({
+        isOpen: true,
+        imageSrc: nextImg,
+        targetSlotIndex: photos.length + 1,
+        pendingQueue: rest,
+      });
+    } else {
+      setCropModalData({
+        isOpen: false,
+        imageSrc: null,
+        targetSlotIndex: 0,
+        pendingQueue: [],
+      });
+    }
+  };
+
   // Slot Upload handler
   const handleSlotUpload = (slotIndex: number, e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -428,10 +673,16 @@ export const BoothAppPage: React.FC = () => {
     const reader = new FileReader();
     reader.onload = (event) => {
       if (event.target?.result) {
-        updatePhotoAtSlot(slotIndex, event.target.result as string);
+        setCropModalData({
+          isOpen: true,
+          imageSrc: event.target.result as string,
+          targetSlotIndex: slotIndex,
+          pendingQueue: [],
+        });
       }
     };
     reader.readAsDataURL(file);
+    e.target.value = '';
   };
 
   // Custom frame file upload in modal
@@ -463,10 +714,10 @@ export const BoothAppPage: React.FC = () => {
     const files = e.target.files;
     if (!files || files.length === 0) return;
 
-    const uploadedUrls: string[] = [];
     const filesToRead = Array.from(files).slice(0, totalRequired);
-
+    const uploadedUrls: string[] = [];
     let count = 0;
+
     filesToRead.forEach((file) => {
       const reader = new FileReader();
       reader.onload = (event) => {
@@ -474,12 +725,18 @@ export const BoothAppPage: React.FC = () => {
           uploadedUrls.push(event.target.result as string);
         }
         count++;
-        if (count === filesToRead.length) {
-          uploadedUrls.forEach((url) => addPhoto(url));
+        if (count === filesToRead.length && uploadedUrls.length > 0) {
+          setCropModalData({
+            isOpen: true,
+            imageSrc: uploadedUrls[0],
+            targetSlotIndex: photos.length,
+            pendingQueue: uploadedUrls.slice(1),
+          });
         }
       };
       reader.readAsDataURL(file);
     });
+    e.target.value = '';
   };
 
   const handleSelectTemplate = (tpl: FrameTemplate) => {
@@ -499,7 +756,10 @@ export const BoothAppPage: React.FC = () => {
   // Ensure active frame always has a valid overlay applied to camera
   useEffect(() => {
     if (!frame.overlayImage) {
-      const matchTpl = SAMPLE_FRAMES.find((f) => f.id === frame.id || f.name === frame.name) || SAMPLE_FRAMES[0];
+      const matchTpl =
+        SAMPLE_FRAMES.find((f) => (f.id === frame.id || f.name === frame.name) && f.layout === layout) ||
+        SAMPLE_FRAMES.find((f) => f.layout === layout) ||
+        SAMPLE_FRAMES[0];
       if (matchTpl) {
         const svgOverlay = generateFrameOverlaySvg(matchTpl, layout);
         setFrame({
@@ -514,13 +774,15 @@ export const BoothAppPage: React.FC = () => {
   }, [frame, layout, setFrame]);
 
   const filteredModalFrames = SAMPLE_FRAMES.filter((f) => {
+    const matchLayout = f.layout === layout;
     const matchCat = frameCategory === 'all' || f.category === frameCategory;
     const matchSearch = f.name.toLowerCase().includes(frameSearch.toLowerCase());
-    return matchCat && matchSearch;
+    return matchLayout && matchCat && matchSearch;
   });
 
   // Safe reset handler that guarantees video keeps streaming (MUST BE BEFORE EARLY RETURNS)
   const handleResetPhotos = useCallback(() => {
+    stopRecapRecording();
     resetPhotos();
     setIsCountingDown(false);
     setIsAutoSequence(false);
@@ -542,7 +804,7 @@ export const BoothAppPage: React.FC = () => {
   }
 
   return (
-    <div className="bg-[#fef8f9] min-h-[calc(100vh-80px)] py-3 sm:py-4 px-3 sm:px-6 lg:px-8 text-gray-800">
+    <div className="bg-[#fef8f9] min-h-[calc(100vh-80px)] py-3 sm:py-4 px-3 sm:px-6 lg:px-8 text-gray-800 pb-24 sm:pb-8">
       <div className="max-w-6xl mx-auto space-y-3 sm:space-y-4">
         {/* 1. TOP HEADER (PHOTOXINHH SCRIPT & TOOLBAR) */}
         <div className="flex flex-col items-center text-center w-full">
@@ -597,7 +859,20 @@ export const BoothAppPage: React.FC = () => {
               <select
                 value={layout}
                 onChange={(e) => {
-                  setLayout(e.target.value as LayoutType);
+                  const newLayout = e.target.value as LayoutType;
+                  setLayout(newLayout);
+                  const matchingFrame = SAMPLE_FRAMES.find((f) => f.layout === newLayout);
+                  if (matchingFrame) {
+                    const svgOverlay = generateFrameOverlaySvg(matchingFrame, newLayout);
+                    setFrame({
+                      id: matchingFrame.id,
+                      name: matchingFrame.name,
+                      bgColor: matchingFrame.bgColor,
+                      textColor: matchingFrame.textColor,
+                      category: 'pastel',
+                      overlayImage: svgOverlay,
+                    });
+                  }
                   handleResetPhotos();
                 }}
                 className="w-full sm:w-auto px-2 py-1.5 sm:py-1 rounded-xl sm:rounded-lg bg-white border border-pink-200 text-gray-700 font-medium text-[11px] sm:text-xs shadow-2xs focus:outline-none focus:border-pink-400 cursor-pointer text-center sm:text-left"
@@ -605,6 +880,7 @@ export const BoothAppPage: React.FC = () => {
                 <option value="1x4_strip">1x4 (4 ảnh)</option>
                 <option value="2x2_grid">2x2 (4 ảnh)</option>
                 <option value="polaroid">Polaroid (1 ảnh)</option>
+                <option value="collage_6">Collage 6 ảnh (Bong bóng)</option>
               </select>
             </div>
 
@@ -678,6 +954,9 @@ export const BoothAppPage: React.FC = () => {
                   }`}
                 />
               )}
+
+              {/* LIVE FACE AR FILTER OVERLAY (Tai thỏ, Vương miện, Mèo, Kính trái tim...) */}
+              <FaceFilterCameraOverlay filterId={faceFilter} pos={faceFilterPos} isMirror={isMirror} />
 
               {/* LIVE FRAME OVERLAY ON CAMERA (MATCHING USER SCREENSHOT & SLOT-BY-SLOT CROPPING) */}
               {showFrameOverlay && (
@@ -898,13 +1177,14 @@ export const BoothAppPage: React.FC = () => {
             </div>
 
             {/* Toggle Video Recap & Upload Button */}
-            <div className="flex items-center justify-center gap-3 sm:gap-4 text-xs font-semibold w-full">
+            <div className="flex flex-wrap items-center justify-center gap-2.5 sm:gap-4 text-xs font-semibold w-full">
               <label className="flex items-center gap-2 cursor-pointer select-none">
                 <div
                   onClick={toggleVideoRecap}
                   className={`w-8 sm:w-9 h-4.5 sm:h-5 rounded-full transition-colors p-0.5 ${
                     isVideoRecap ? 'bg-pink-400' : 'bg-gray-300'
                   }`}
+                  title="Bật/Tắt tính năng quay video ngầm recap"
                 >
                   <div
                     className={`w-3.5 sm:w-4 h-3.5 sm:h-4 rounded-full bg-white transition-transform ${
@@ -912,8 +1192,33 @@ export const BoothAppPage: React.FC = () => {
                     }`}
                   />
                 </div>
-                <span className="text-[11px] sm:text-xs text-gray-600">Video Recap</span>
+                <div className="flex items-center gap-1.5">
+                  <span className="text-[11px] sm:text-xs text-gray-700">Video Recap</span>
+                  {isRecordingRecap && (
+                    <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full bg-rose-100 text-rose-600 text-[10px] font-bold animate-pulse">
+                      <span className="w-1.5 h-1.5 rounded-full bg-rose-600"></span>
+                      REC
+                    </span>
+                  )}
+                </div>
               </label>
+
+              {/* Tải video recap nếu đã quay xong */}
+              {recapVideoUrl && (
+                <button
+                  onClick={() => {
+                    const link = document.createElement('a');
+                    link.download = `photoxinhh_recap_${Date.now()}.webm`;
+                    link.href = recapVideoUrl;
+                    link.click();
+                  }}
+                  className="flex items-center gap-1 px-2.5 py-1 rounded-full bg-gradient-to-r from-purple-500 to-pink-500 text-white text-[11px] font-semibold hover:shadow-xs transition active:scale-95 cursor-pointer shadow-xs"
+                  title="Tải video recap về máy"
+                >
+                  <Video className="w-3 h-3 text-pink-200" />
+                  <span>Tải Video Recap</span>
+                </button>
+              )}
 
               <label className="flex items-center gap-1.5 px-3 sm:px-3.5 py-1.5 rounded-xl bg-blue-50 hover:bg-blue-100 text-blue-600 border border-blue-200 font-semibold cursor-pointer transition shadow-2xs text-[11px] sm:text-xs">
                 <Upload className="w-3 sm:w-3.5 h-3 sm:h-3.5" />
@@ -926,6 +1231,71 @@ export const BoothAppPage: React.FC = () => {
                   onChange={handleGeneralUpload}
                 />
               </label>
+            </div>
+
+            {/* FILTER MẶT CUTE AR (PROPS TRỰC TIẾP TRÊN CAMERA & KHI CHỤP ẢNH) */}
+            <div className="w-full max-w-lg bg-gradient-to-r from-pink-50/70 via-rose-50/50 to-purple-50/70 border border-pink-200/90 rounded-2xl p-3 sm:p-3.5 space-y-2 shadow-2xs">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-1.5">
+                  <span className="text-xs font-bold text-pink-600">Filter Mặt Cute AR</span>
+                  <span className="text-[10px] font-bold text-white bg-gradient-to-r from-pink-500 to-rose-400 px-2 py-0.5 rounded-full shadow-2xs">
+                    TIKTOK AUTO TRACK ✨
+                  </span>
+                </div>
+                {faceFilter !== 'none' && (
+                  <div className="flex items-center gap-1.5">
+                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-700 text-[10px] font-bold">
+                      <span className="w-1.5 h-1.5 rounded-full bg-emerald-600 animate-ping"></span>
+                      Auto Track Mặt
+                    </span>
+                    <button
+                      onClick={() => setFaceFilterPos((p) => ({ ...p, y: Math.max(0.15, p.y - 0.03) }))}
+                      className="px-1.5 py-0.5 rounded-md bg-white hover:bg-pink-100 text-pink-700 font-bold border border-pink-200 shadow-2xs cursor-pointer text-[10px]"
+                      title="Nâng cao lên"
+                    >
+                      ⬆️
+                    </button>
+                    <button
+                      onClick={() => setFaceFilterPos((p) => ({ ...p, y: Math.min(0.65, p.y + 0.03) }))}
+                      className="px-1.5 py-0.5 rounded-md bg-white hover:bg-pink-100 text-pink-700 font-bold border border-pink-200 shadow-2xs cursor-pointer text-[10px]"
+                      title="Hạ thấp xuống"
+                    >
+                      ⬇️
+                    </button>
+                    <button
+                      onClick={() => setFaceFilterPos((p) => ({ ...p, scale: Math.min(1.5, p.scale + 0.08) }))}
+                      className="px-1.5 py-0.5 rounded-md bg-white hover:bg-pink-100 text-pink-700 font-bold border border-pink-200 shadow-2xs cursor-pointer text-[10px]"
+                      title="Phóng to"
+                    >
+                      ➕
+                    </button>
+                    <button
+                      onClick={() => setFaceFilterPos((p) => ({ ...p, scale: Math.max(0.6, p.scale - 0.08) }))}
+                      className="px-1.5 py-0.5 rounded-md bg-white hover:bg-pink-100 text-pink-700 font-bold border border-pink-200 shadow-2xs cursor-pointer text-[10px]"
+                      title="Thu nhỏ"
+                    >
+                      ➖
+                    </button>
+                  </div>
+                )}
+              </div>
+              <div className="flex flex-nowrap sm:flex-wrap overflow-x-auto no-scrollbar gap-1.5 pb-1 -mx-0.5 px-0.5 touch-pan-x">
+                {FACE_FILTERS.map((f) => (
+                  <button
+                    key={f.id}
+                    onClick={() => setFaceFilter(f.id)}
+                    className={`flex-shrink-0 whitespace-nowrap px-2.5 sm:px-3 py-1.5 rounded-lg text-[11px] sm:text-xs font-medium transition cursor-pointer flex items-center gap-1.5 ${
+                      faceFilter === f.id
+                        ? 'bg-gradient-to-r from-pink-500 to-rose-400 text-white shadow-xs font-bold ring-2 ring-pink-300'
+                        : 'bg-white/90 text-gray-700 hover:bg-pink-100 hover:text-pink-600 border border-pink-100 shadow-2xs'
+                    }`}
+                    title={f.desc}
+                  >
+                    <span className="text-sm">{f.emoji}</span>
+                    <span>{f.label}</span>
+                  </button>
+                ))}
+              </div>
             </div>
 
             {/* BỘ LỌC MÀU CARD (TOUCH HORIZONTAL SCROLL ON MOBILE) */}
@@ -964,7 +1334,7 @@ export const BoothAppPage: React.FC = () => {
               <span className="text-xs font-bold text-gray-700 flex items-center gap-1.5">
                 <span>Khung Ảnh:</span>
                 <span className="px-2 py-0.5 rounded-full bg-pink-100 text-pink-600 text-[11px] font-extrabold">
-                  {layout === '1x4_strip' ? 'Dải Dọc 1x4' : layout === '2x2_grid' ? 'Lưới Vuông 2x2' : 'Khung Polaroid'}
+                  {layout === '1x4_strip' ? 'Dải Dọc 1x4' : layout === '2x2_grid' ? 'Lưới Vuông 2x2' : layout === 'collage_6' ? 'Collage 6 Ảnh' : 'Khung Polaroid'}
                 </span>
               </span>
               <span className="text-[11px] text-pink-500 font-semibold">
@@ -983,13 +1353,22 @@ export const BoothAppPage: React.FC = () => {
                         alt="Ảnh Polaroid"
                         className="w-full h-full object-cover rounded-xl"
                       />
-                      <button
-                        onClick={() => removePhotoAtSlot(0)}
-                        className="absolute top-2 right-2 p-1.5 rounded-full bg-black/60 text-white hover:bg-rose-500 transition shadow-xs text-xs"
-                        title="Xóa ảnh này"
-                      >
-                        <X className="w-3.5 h-3.5" />
-                      </button>
+                      <div className="absolute top-2 right-2 flex items-center gap-1">
+                        <button
+                          onClick={() => setCropModalData({ isOpen: true, imageSrc: photos[0], targetSlotIndex: 0, pendingQueue: [] })}
+                          className="p-1.5 rounded-full bg-black/60 text-white hover:bg-pink-500 transition shadow-xs text-xs"
+                          title="Cắt & Điều chỉnh ảnh"
+                        >
+                          <Crop className="w-3.5 h-3.5" />
+                        </button>
+                        <button
+                          onClick={() => removePhotoAtSlot(0)}
+                          className="p-1.5 rounded-full bg-black/60 text-white hover:bg-rose-500 transition shadow-xs text-xs"
+                          title="Xóa ảnh này"
+                        >
+                          <X className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
                     </div>
                   ) : (
                     <div className="flex flex-col items-center justify-center p-4 space-y-2 text-center">
@@ -1046,13 +1425,22 @@ export const BoothAppPage: React.FC = () => {
                             alt={`Ảnh ô #${slotIndex + 1}`}
                             className="w-full h-full object-cover rounded-xl"
                           />
-                          <button
-                            onClick={() => removePhotoAtSlot(slotIndex)}
-                            className="absolute top-1.5 right-1.5 p-1 rounded-full bg-black/60 text-white hover:bg-rose-500 transition text-[10px]"
-                            title="Xóa ảnh này"
-                          >
-                            <X className="w-3 h-3" />
-                          </button>
+                          <div className="absolute top-1.5 right-1.5 flex items-center gap-1 z-10">
+                            <button
+                              onClick={() => setCropModalData({ isOpen: true, imageSrc: photo, targetSlotIndex: slotIndex, pendingQueue: [] })}
+                              className="p-1 rounded-full bg-black/60 text-white hover:bg-pink-500 transition text-[10px]"
+                              title="Cắt & Điều chỉnh ảnh"
+                            >
+                              <Crop className="w-3 h-3" />
+                            </button>
+                            <button
+                              onClick={() => removePhotoAtSlot(slotIndex)}
+                              className="p-1 rounded-full bg-black/60 text-white hover:bg-rose-500 transition text-[10px]"
+                              title="Xóa ảnh này"
+                            >
+                              <X className="w-3 h-3" />
+                            </button>
+                          </div>
                         </div>
                       ) : (
                         <div className="flex flex-col items-center justify-center space-y-1.5 text-center">
@@ -1076,8 +1464,155 @@ export const BoothAppPage: React.FC = () => {
                   );
                 })}
               </div>
+            ) : layout === 'collage_6' ? (
+              /* Layout 3: Collage 6-Cut View (1 Large Hero + 2 Stacked Right + 3 Bottom Cards - Bong Bóng Nghệ Thuật) */
+              <div className="flex flex-col gap-2.5 w-full bg-white/80 border border-pink-100 rounded-3xl p-3 shadow-xs">
+                {/* Top Section: Hero Slot 0 (60%) + Stacked Slots 1 & 2 (40%) */}
+                <div className="flex gap-2 w-full h-56 sm:h-64">
+                  {/* Slot 0: Hero Large */}
+                  {(() => {
+                    const slotIndex = 0;
+                    const photo = photos[slotIndex];
+                    const isCurrentSlot = photos.length === slotIndex;
+                    return (
+                      <div
+                        className={`w-[60%] h-full bg-white border-2 rounded-2xl p-2 flex flex-col items-center justify-center shadow-2xs relative overflow-hidden transition-all ${
+                          isCurrentSlot ? 'border-pink-400 ring-2 ring-pink-300/40 bg-pink-50/10' : 'border-pink-200'
+                        }`}
+                      >
+                        <div className="absolute top-1.5 left-1.5 z-10 w-5 h-5 rounded-full bg-pink-100/90 text-pink-600 text-[10px] font-black flex items-center justify-center shadow-2xs">
+                          1
+                        </div>
+                        {photo ? (
+                          <div className="w-full h-full relative flex items-center justify-center">
+                            <img src={photo} alt="Ảnh ô #1" className="w-full h-full object-cover rounded-xl" />
+                            <div className="absolute top-1.5 right-1.5 flex items-center gap-1 z-10">
+                              <button
+                                onClick={() => setCropModalData({ isOpen: true, imageSrc: photo, targetSlotIndex: slotIndex, pendingQueue: [] })}
+                                className="p-1 rounded-full bg-black/60 text-white hover:bg-pink-500 transition text-[10px]"
+                                title="Cắt & Điều chỉnh ảnh"
+                              >
+                                <Crop className="w-3 h-3" />
+                              </button>
+                              <button
+                                onClick={() => removePhotoAtSlot(slotIndex)}
+                                className="p-1 rounded-full bg-black/60 text-white hover:bg-rose-500 transition text-[10px]"
+                                title="Xóa ảnh này"
+                              >
+                                <X className="w-3 h-3" />
+                              </button>
+                            </div>
+                          </div>
+                        ) : (
+                          <div className="flex flex-col items-center justify-center space-y-1 text-center">
+                            <div className="w-10 h-10 flex items-center justify-center text-purple-400">
+                              <IconEmptyPhotoSlot />
+                            </div>
+                            <span className="text-[10px] text-gray-500 font-semibold">Ảnh Lớn #1</span>
+                            <label className="flex items-center gap-1 px-2.5 py-1 rounded-xl bg-blue-50/80 hover:bg-blue-100 text-blue-600 border border-blue-200 text-[11px] font-semibold cursor-pointer transition shadow-2xs">
+                              <ImageIcon className="w-3 h-3 text-blue-500" />
+                              <span>Upload</span>
+                              <input type="file" accept="image/*" className="hidden" onChange={(e) => handleSlotUpload(slotIndex, e)} />
+                            </label>
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })()}
+
+                  {/* Stacked Slots 1 & 2 */}
+                  <div className="w-[40%] h-full flex flex-col gap-2">
+                    {[1, 2].map((slotIndex) => {
+                      const photo = photos[slotIndex];
+                      const isCurrentSlot = photos.length === slotIndex;
+                      return (
+                        <div
+                          key={slotIndex}
+                          className={`flex-1 h-1/2 bg-white border-2 rounded-2xl p-1.5 flex flex-col items-center justify-center shadow-2xs relative overflow-hidden transition-all ${
+                            isCurrentSlot ? 'border-pink-400 ring-2 ring-pink-300/40 bg-pink-50/10' : 'border-pink-200'
+                          }`}
+                        >
+                          <div className="absolute top-1 left-1 z-10 w-4 h-4 rounded-full bg-pink-100/90 text-pink-600 text-[9px] font-black flex items-center justify-center shadow-2xs">
+                            {slotIndex + 1}
+                          </div>
+                          {photo ? (
+                            <div className="w-full h-full relative flex items-center justify-center">
+                              <img src={photo} alt={`Ảnh ô #${slotIndex + 1}`} className="w-full h-full object-cover rounded-lg" />
+                              <div className="absolute top-1 right-1 flex items-center gap-0.5 z-10">
+                                <button
+                                  onClick={() => setCropModalData({ isOpen: true, imageSrc: photo, targetSlotIndex: slotIndex, pendingQueue: [] })}
+                                  className="p-1 rounded-full bg-black/60 text-white hover:bg-pink-500 transition text-[9px]"
+                                >
+                                  <Crop className="w-2.5 h-2.5" />
+                                </button>
+                                <button
+                                  onClick={() => removePhotoAtSlot(slotIndex)}
+                                  className="p-1 rounded-full bg-black/60 text-white hover:bg-rose-500 transition text-[9px]"
+                                >
+                                  <X className="w-2.5 h-2.5" />
+                                </button>
+                              </div>
+                            </div>
+                          ) : (
+                            <label className="flex items-center gap-1 px-2 py-0.5 rounded-lg bg-blue-50/80 hover:bg-blue-100 text-blue-600 border border-blue-200 text-[10px] font-semibold cursor-pointer transition shadow-2xs">
+                              <ImageIcon className="w-3 h-3 text-blue-500" />
+                              <span>Upload #{slotIndex + 1}</span>
+                              <input type="file" accept="image/*" className="hidden" onChange={(e) => handleSlotUpload(slotIndex, e)} />
+                            </label>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                {/* Bottom Row: 3 Polaroid Cards Side by Side (Slots 3, 4, 5) */}
+                <div className="grid grid-cols-3 gap-2 w-full h-28 sm:h-32">
+                  {[3, 4, 5].map((slotIndex) => {
+                    const photo = photos[slotIndex];
+                    const isCurrentSlot = photos.length === slotIndex;
+                    return (
+                      <div
+                        key={slotIndex}
+                        className={`h-full bg-white border-2 rounded-2xl p-1.5 flex flex-col items-center justify-center shadow-2xs relative overflow-hidden transition-all ${
+                          isCurrentSlot ? 'border-pink-400 ring-2 ring-pink-300/40 bg-pink-50/10' : 'border-pink-200'
+                        }`}
+                      >
+                        <div className="absolute top-1 left-1 z-10 w-4 h-4 rounded-full bg-pink-100/90 text-pink-600 text-[9px] font-black flex items-center justify-center shadow-2xs">
+                          {slotIndex + 1}
+                        </div>
+                        {photo ? (
+                          <div className="w-full h-full relative flex items-center justify-center">
+                            <img src={photo} alt={`Ảnh ô #${slotIndex + 1}`} className="w-full h-full object-cover rounded-lg" />
+                            <div className="absolute top-1 right-1 flex items-center gap-0.5 z-10">
+                              <button
+                                onClick={() => setCropModalData({ isOpen: true, imageSrc: photo, targetSlotIndex: slotIndex, pendingQueue: [] })}
+                                className="p-1 rounded-full bg-black/60 text-white hover:bg-pink-500 transition text-[9px]"
+                              >
+                                <Crop className="w-2.5 h-2.5" />
+                              </button>
+                              <button
+                                onClick={() => removePhotoAtSlot(slotIndex)}
+                                className="p-1 rounded-full bg-black/60 text-white hover:bg-rose-500 transition text-[9px]"
+                              >
+                                <X className="w-2.5 h-2.5" />
+                              </button>
+                            </div>
+                          </div>
+                        ) : (
+                          <label className="flex items-center gap-1 px-1.5 py-0.5 rounded-lg bg-blue-50/80 hover:bg-blue-100 text-blue-600 border border-blue-200 text-[10px] font-semibold cursor-pointer transition shadow-2xs">
+                            <ImageIcon className="w-2.5 h-2.5 text-blue-500" />
+                            <span>#{slotIndex + 1}</span>
+                            <input type="file" accept="image/*" className="hidden" onChange={(e) => handleSlotUpload(slotIndex, e)} />
+                          </label>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
             ) : (
-              /* Layout 3: 1x4 Vertical Strip View (4 Slots in 1 Column) */
+              /* Layout 4: 1x4 Vertical Strip View (4 Slots in 1 Column) */
               <div className="flex flex-col space-y-3 w-full">
                 {Array.from({ length: 4 }).map((_, slotIndex) => {
                   const photo = photos[slotIndex];
@@ -1104,13 +1639,23 @@ export const BoothAppPage: React.FC = () => {
                             alt={`Ảnh ô #${slotIndex + 1}`}
                             className="w-full max-h-32 object-contain rounded-xl shadow-xs"
                           />
-                          <button
-                            onClick={() => removePhotoAtSlot(slotIndex)}
-                            className="mt-1 text-[11px] text-rose-500 hover:text-rose-700 font-medium flex items-center gap-1"
-                          >
-                            <X className="w-3 h-3" />
-                            <span>Xóa ảnh này</span>
-                          </button>
+                          <div className="flex items-center gap-3 mt-1">
+                            <button
+                              onClick={() => setCropModalData({ isOpen: true, imageSrc: photo, targetSlotIndex: slotIndex, pendingQueue: [] })}
+                              className="text-[11px] text-pink-600 hover:text-pink-700 font-medium flex items-center gap-1 cursor-pointer"
+                              title="Cắt & Điều chỉnh ảnh"
+                            >
+                              <Crop className="w-3 h-3" />
+                              <span>Cắt ảnh</span>
+                            </button>
+                            <button
+                              onClick={() => removePhotoAtSlot(slotIndex)}
+                              className="text-[11px] text-rose-500 hover:text-rose-700 font-medium flex items-center gap-1 cursor-pointer"
+                            >
+                              <X className="w-3 h-3" />
+                              <span>Xóa ảnh này</span>
+                            </button>
+                          </div>
                         </div>
                       ) : (
                         <div className="flex flex-col items-center justify-center py-1 space-y-1.5 text-center">
@@ -1173,7 +1718,7 @@ export const BoothAppPage: React.FC = () => {
               <div>
                 <h3 className="font-bold text-lg text-gray-800">Chọn Khung Hỗ Trợ Chụp</h3>
                 <p className="text-xs text-emerald-600 font-medium mt-1">
-                  Tính năng này giúp bạn xem trước khung và căn chỉnh góc chụp dễ dàng hơn (Chỉ Hoạt Động Với Layout 1x1 hoặc 1x4).
+                  Tính năng này giúp bạn xem trước khung và căn chỉnh góc chụp dễ dàng hơn theo layout đã chọn.
                 </p>
               </div>
               <button
@@ -1214,9 +1759,21 @@ export const BoothAppPage: React.FC = () => {
             </div>
 
             {/* Modal Frames Grid */}
-            <div className="p-5 overflow-y-auto grid grid-cols-3 sm:grid-cols-4 md:grid-cols-6 lg:grid-cols-8 gap-3 max-h-[60vh]">
+            <div
+              className={`p-5 overflow-y-auto grid ${
+                layout === '1x4_strip'
+                  ? 'grid-cols-3 sm:grid-cols-4 md:grid-cols-6 lg:grid-cols-8'
+                  : layout === 'collage_6'
+                  ? 'grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6'
+                  : 'grid-cols-2 sm:grid-cols-3 md:grid-cols-5 lg:grid-cols-7'
+              } gap-3 max-h-[60vh]`}
+            >
               {/* Card 1: Upload Your Own Frame */}
-              <label className="border-2 border-dashed border-gray-300 hover:border-pink-400 rounded-xl p-2.5 flex flex-col items-center justify-center text-center cursor-pointer bg-gray-50/60 hover:bg-pink-50/40 transition aspect-[1/3]">
+              <label
+                className={`border-2 border-dashed border-gray-300 hover:border-pink-400 rounded-xl p-2.5 flex flex-col items-center justify-center text-center cursor-pointer bg-gray-50/60 hover:bg-pink-50/40 transition ${
+                  layout === '1x4_strip' ? 'aspect-[1/3]' : layout === 'collage_6' ? 'aspect-[2/3]' : 'aspect-[3/4]'
+                }`}
+              >
                 <div className="w-8 h-8 rounded-full bg-white border border-gray-200 flex items-center justify-center text-gray-600 mb-1.5 shadow-2xs">
                   <Upload className="w-4 h-4" />
                 </div>
@@ -1239,27 +1796,129 @@ export const BoothAppPage: React.FC = () => {
                   <div
                     key={tpl.id}
                     onClick={() => handleSelectTemplate(tpl)}
-                    className={`rounded-xl border p-2 flex flex-col items-center justify-between cursor-pointer transition aspect-[1/3] relative ${
+                    className={`rounded-xl border p-2 flex flex-col items-center justify-between cursor-pointer transition ${
+                      layout === '1x4_strip' ? 'aspect-[1/3]' : layout === 'collage_6' ? 'aspect-[2/3]' : 'aspect-[3/4]'
+                    } relative ${
                       isCurrent
                         ? 'border-pink-500 bg-pink-50/70 shadow-xs ring-1 ring-pink-400'
                         : 'border-gray-200 hover:border-pink-300 bg-white hover:shadow-2xs'
                     }`}
                   >
-                    {/* Simulated 4-cut vertical strip frame thumbnail */}
-                    <div
-                      className="w-full flex-1 rounded-md p-1 flex flex-col justify-between shadow-2xs border border-black/10 overflow-hidden"
-                      style={{ backgroundColor: tpl.bgColor }}
-                    >
-                      {/* 4 Transparent/white photo cutout slots */}
-                      {Array.from({ length: 4 }).map((_, i) => (
+                    {layout === 'collage_6' ? (
+                      /* Collage 6-Cut Mini Preview */
+                      <div
+                        className="w-full flex-1 rounded-md p-1 flex flex-col justify-between shadow-2xs border border-black/10 overflow-hidden"
+                        style={{ backgroundColor: tpl.bgColor }}
+                      >
                         <div
-                          key={i}
-                          className="w-full flex-1 my-0.5 rounded-xs bg-white/70 border border-black/10 flex items-center justify-center text-[7px] text-gray-300 font-bold"
+                          className="text-[6.5px] font-bold text-center truncate pt-0.5 leading-none"
+                          style={{ color: tpl.textColor }}
                         >
-                          {i + 1}
+                          🫧 {tpl.name}
                         </div>
-                      ))}
-                    </div>
+                        <div className="flex gap-1 h-[56%] my-0.5">
+                          <div className="w-[62%] h-full rounded-2xs bg-white/75 border border-black/10 flex items-center justify-center text-[6px] text-gray-400 font-bold">
+                            1
+                          </div>
+                          <div className="w-[38%] flex flex-col gap-0.5">
+                            <div className="flex-1 rounded-2xs bg-white/75 border border-black/10 flex items-center justify-center text-[5px] text-gray-400 font-bold">
+                              2
+                            </div>
+                            <div className="flex-1 rounded-2xs bg-white/75 border border-black/10 flex items-center justify-center text-[5px] text-gray-400 font-bold">
+                              3
+                            </div>
+                          </div>
+                        </div>
+                        <div className="grid grid-cols-3 gap-0.5 h-[34%]">
+                          <div className="rounded-2xs bg-white/75 border border-black/10 flex items-center justify-center text-[5px] text-gray-400 font-bold">
+                            4
+                          </div>
+                          <div className="rounded-2xs bg-white/75 border border-black/10 flex items-center justify-center text-[5px] text-gray-400 font-bold">
+                            5
+                          </div>
+                          <div className="rounded-2xs bg-white/75 border border-black/10 flex items-center justify-center text-[5px] text-gray-400 font-bold">
+                            6
+                          </div>
+                        </div>
+                      </div>
+                    ) : layout === '2x2_grid' ? (
+                      /* 2x2 Grid Mini Preview */
+                      <div
+                        className="w-full flex-1 rounded-md p-1 flex flex-col justify-between shadow-2xs border border-black/10 overflow-hidden"
+                        style={{ backgroundColor: tpl.bgColor }}
+                      >
+                        <div
+                          className="text-[6.5px] font-bold text-center truncate pt-0.5 leading-none"
+                          style={{ color: tpl.textColor }}
+                        >
+                          {tpl.headerEmoji || tpl.name}
+                        </div>
+                        <div className="grid grid-cols-2 gap-0.5 my-1 flex-1">
+                          {[1, 2, 3, 4].map((n) => (
+                            <div
+                              key={n}
+                              className="w-full h-full rounded-2xs bg-white/75 border border-black/10 flex items-center justify-center text-[6px] text-gray-300 font-bold"
+                            >
+                              {n}
+                            </div>
+                          ))}
+                        </div>
+                        <div
+                          className="text-[6px] font-semibold text-center truncate pb-0.5 leading-none opacity-80"
+                          style={{ color: tpl.textColor }}
+                        >
+                          {tpl.footerEmoji || 'PhotoXinhh'}
+                        </div>
+                      </div>
+                    ) : layout === 'polaroid' ? (
+                      /* Polaroid Mini Preview */
+                      <div
+                        className="w-full flex-1 rounded-md p-1 flex flex-col justify-between shadow-2xs border border-black/10 overflow-hidden"
+                        style={{ backgroundColor: tpl.bgColor }}
+                      >
+                        <div className="w-full aspect-square rounded-2xs bg-white/80 border border-black/10 flex items-center justify-center text-[8px] text-gray-300 font-bold my-1">
+                          1
+                        </div>
+                        <div
+                          className="text-[6.5px] font-bold text-center truncate pb-0.5"
+                          style={{ color: tpl.textColor }}
+                        >
+                          {tpl.name}
+                        </div>
+                      </div>
+                    ) : (
+                      /* 1x4 Strip Mini Preview */
+                      <div
+                        className="w-full flex-1 rounded-md p-1 flex flex-col justify-between shadow-2xs border border-black/10 overflow-hidden"
+                        style={{ backgroundColor: tpl.bgColor }}
+                      >
+                        {tpl.id === 'photo-palette-cat' ? (
+                          <div className="flex-1 my-0.5 flex flex-col justify-between gap-0.5">
+                            <div className="w-full flex-1 rounded-xs bg-amber-50/90 border border-pink-300 flex items-center justify-center text-[6px] text-pink-600 font-bold">
+                              🐱 1
+                            </div>
+                            <div className="w-full flex-1 rounded-xs bg-white/75 border border-black/10 flex items-center justify-center text-[6px] text-gray-400 font-bold">
+                              2
+                            </div>
+                            <div className="w-full flex-1 rounded-xs bg-rose-50/90 border border-pink-300 flex items-center justify-center text-[6px] text-rose-500 font-bold">
+                              ❤️ 3
+                            </div>
+                            <div className="w-full flex-1 rounded-xs bg-white/75 border border-black/10 flex items-center justify-center text-[6px] text-gray-400 font-bold">
+                              4
+                            </div>
+                          </div>
+                        ) : (
+                          Array.from({ length: 4 }).map((_, i) => (
+                            <div
+                              key={i}
+                              className="w-full flex-1 my-0.5 rounded-xs bg-white/70 border border-black/10 flex items-center justify-center text-[7px] text-gray-300 font-bold"
+                            >
+                              {i + 1}
+                            </div>
+                          ))
+                        )}
+                      </div>
+                    )}
 
                     <div className="text-[10px] font-medium text-gray-700 truncate w-full text-center mt-1">
                       {tpl.name}
@@ -1278,6 +1937,21 @@ export const BoothAppPage: React.FC = () => {
         onClose={() => setIsMobileMenuOpen(false)}
         onOpenFrameModal={() => setShowFrameModal(true)}
         onResetPhotos={handleResetPhotos}
+      />
+
+      {/* Image Cropper & Adjuster Modal */}
+      <ImageCropperModal
+        isOpen={cropModalData.isOpen}
+        imageSrc={cropModalData.imageSrc}
+        onClose={() =>
+          setCropModalData({
+            isOpen: false,
+            imageSrc: null,
+            targetSlotIndex: 0,
+            pendingQueue: [],
+          })
+        }
+        onConfirm={handleConfirmCrop}
       />
     </div>
   );

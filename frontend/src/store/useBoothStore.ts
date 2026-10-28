@@ -23,6 +23,7 @@ interface BoothState {
   customText: string;
   showDateStamp: boolean;
   isVideoRecap: boolean;
+  recapVideoUrl: string | null;
 
   // Actions
   setStep: (step: AppStep) => void;
@@ -39,12 +40,13 @@ interface BoothState {
   setCustomText: (text: string) => void;
   toggleDateStamp: () => void;
   toggleVideoRecap: () => void;
+  setRecapVideoUrl: (url: string | null) => void;
 }
 
 export const useBoothStore = create<BoothState>((set) => ({
   step: 'capture', // Default directly to the photo capture screen!
   layout: '1x4_strip',
-  filter: 'cool_pink',
+  filter: 'korean_glow',
   frame: FRAME_PRESETS[1], // Default pastel pink
   photos: [],
   activeSlotIndex: 0,
@@ -53,6 +55,7 @@ export const useBoothStore = create<BoothState>((set) => ({
   customText: 'PHOTOBOOTH • MEMORIES',
   showDateStamp: true,
   isVideoRecap: false,
+  recapVideoUrl: null,
 
   setStep: (step) => set({ step }),
   setLayout: (layout) => set({ layout }),
@@ -72,10 +75,17 @@ export const useBoothStore = create<BoothState>((set) => ({
       return { photos: updated };
     }),
   setPhotos: (photos) => set({ photos }),
-  resetPhotos: () => set({ photos: [] }),
+  resetPhotos: () =>
+    set((state) => {
+      if (state.recapVideoUrl) {
+        URL.revokeObjectURL(state.recapVideoUrl);
+      }
+      return { photos: [], recapVideoUrl: null };
+    }),
   toggleMirror: () => set((state) => ({ isMirror: !state.isMirror })),
   setTimerDuration: (timerDuration) => set({ timerDuration }),
   setCustomText: (customText) => set({ customText }),
   toggleDateStamp: () => set((state) => ({ showDateStamp: !state.showDateStamp })),
   toggleVideoRecap: () => set((state) => ({ isVideoRecap: !state.isVideoRecap })),
+  setRecapVideoUrl: (recapVideoUrl) => set({ recapVideoUrl }),
 }));

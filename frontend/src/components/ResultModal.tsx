@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState, useCallback } from 'react';
-import { Download, Printer, QrCode, Sparkles, RotateCcw, Share2, Check } from 'lucide-react';
+import { Download, Printer, QrCode, Sparkles, RotateCcw, Share2, Check, Video } from 'lucide-react';
 import confetti from 'canvas-confetti';
 import { useBoothStore } from '../store/useBoothStore';
 
@@ -11,6 +11,7 @@ export const ResultModal: React.FC = () => {
     frame,
     customText,
     showDateStamp,
+    recapVideoUrl,
     resetPhotos,
     setStep,
   } = useBoothStore();
@@ -32,9 +33,10 @@ export const ResultModal: React.FC = () => {
   const generateHighResCanvas = useCallback(() => {
     const isStrip = layout === '1x4_strip';
     const isGrid = layout === '2x2_grid';
+    const isCollage = layout === 'collage_6';
 
     const baseWidth = isStrip ? 1200 : isGrid ? 1600 : 1200;
-    const baseHeight = isStrip ? 3600 : isGrid ? 2000 : 1500;
+    const baseHeight = isStrip ? 3600 : isGrid ? 2000 : 1800;
 
     const canvas = document.createElement('canvas');
     canvas.width = baseWidth;
@@ -46,15 +48,13 @@ export const ResultModal: React.FC = () => {
     ctx.fillRect(0, 0, baseWidth, baseHeight);
 
     if (filter === 'korean_glow') {
-      ctx.filter = 'brightness(1.08) contrast(1.02) saturate(1.08)';
+      ctx.filter = 'brightness(1.08) contrast(1.04) saturate(1.12) hue-rotate(-4deg)';
     } else if (filter === 'bw') {
-      ctx.filter = 'grayscale(100%) contrast(1.2)';
-    } else if (filter === 'warm_retro') {
-      ctx.filter = 'sepia(20%) saturate(1.2) hue-rotate(-10deg) brightness(1.04)';
+      ctx.filter = 'grayscale(100%) contrast(1.25) brightness(1.02)';
     } else if (filter === 'vintage') {
-      ctx.filter = 'sepia(40%) contrast(1.1) brightness(0.95)';
-    } else if (filter === 'cool_cyber') {
-      ctx.filter = 'contrast(1.15) hue-rotate(15deg) saturate(1.2)';
+      ctx.filter = 'sepia(25%) contrast(1.08) saturate(1.15) brightness(1.02) hue-rotate(-8deg)';
+    } else if (filter === 'cinematic') {
+      ctx.filter = 'contrast(1.22) brightness(0.96) saturate(1.08) hue-rotate(6deg)';
     } else {
       ctx.filter = 'none';
     }
@@ -75,15 +75,18 @@ export const ResultModal: React.FC = () => {
         if (pending === 0) {
           if (isStrip) {
             const singleStripWidth = (baseWidth - padding * 3) / 2;
-            const photoGap = 40;
-            const slotHeight = (availableHeight - photoGap * 3) / 4;
+            const padX = (36 / 600) * singleStripWidth;
+            const padTop = (130 / 1800) * baseHeight;
+            const slotW = (528 / 600) * singleStripWidth;
+            const slotH = (360 / 1800) * baseHeight;
+            const photoGap = (24 / 1800) * baseHeight;
 
             [0, 1].forEach((stripIndex) => {
               const startX = padding + stripIndex * (singleStripWidth + padding);
 
               loadedImages.forEach((image, i) => {
-                const y = padding + i * (slotHeight + photoGap);
-                drawRoundedImage(ctx, image, startX, y, singleStripWidth, slotHeight, 24);
+                const y = padTop + i * (slotH + photoGap);
+                drawRoundedImage(ctx, image, startX + padX, y, slotW, slotH, 24);
               });
 
               ctx.filter = 'none';
@@ -128,6 +131,31 @@ export const ResultModal: React.FC = () => {
             ctx.textAlign = 'center';
             ctx.font = 'bold 50px "Plus Jakarta Sans", sans-serif';
             ctx.fillText(customText, baseWidth / 2, baseHeight - 130);
+          } else if (isCollage) {
+            const s = baseWidth / 1200;
+            const slots = [
+              { x: 55 * s, y: 145 * s, w: 695 * s, h: 810 * s },
+              { x: 775 * s, y: 145 * s, w: 370 * s, h: 395 * s },
+              { x: 775 * s, y: 560 * s, w: 370 * s, h: 395 * s },
+              { x: 55 * s, y: 990 * s, w: 345 * s, h: 440 * s },
+              { x: 428 * s, y: 990 * s, w: 345 * s, h: 440 * s },
+              { x: 800 * s, y: 990 * s, w: 345 * s, h: 440 * s },
+            ];
+            loadedImages.forEach((img, i) => {
+              if (i < 6) {
+                const { x, y, w, h } = slots[i];
+                drawRoundedImage(ctx, img, x, y, w, h, 20);
+              }
+            });
+            ctx.filter = 'none';
+            if (frame.overlayImage) {
+              const overlayImg = new Image();
+              overlayImg.crossOrigin = 'anonymous';
+              overlayImg.onload = () => {
+                ctx.drawImage(overlayImg, 0, 0, baseWidth, baseHeight);
+              };
+              overlayImg.src = frame.overlayImage;
+            }
           } else {
             const slotWidth = baseWidth - padding * 2;
             const slotHeight = slotWidth;
@@ -203,6 +231,14 @@ export const ResultModal: React.FC = () => {
     link.click();
   };
 
+  const handleDownloadRecapVideo = () => {
+    if (!recapVideoUrl) return;
+    const link = document.createElement('a');
+    link.download = `photoxinhh_recap_${Date.now()}.webm`;
+    link.href = recapVideoUrl;
+    link.click();
+  };
+
   const handlePrint = () => {
     window.print();
   };
@@ -246,31 +282,44 @@ export const ResultModal: React.FC = () => {
       </div>
 
       {/* Action Buttons */}
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5 w-full max-w-md mb-6">
-        <button
-          onClick={handleDownload}
-          disabled={!downloadUrl}
-          className="flex items-center justify-center gap-1.5 px-4 py-2.5 rounded-full bg-gradient-to-r from-pink-500 to-purple-500 text-white font-medium text-xs sm:text-sm shadow-xs hover:scale-105 active:scale-95 transition"
-        >
-          <Download className="w-4 h-4" />
-          <span>Tải Ảnh PNG</span>
-        </button>
+      <div className="flex flex-col items-center gap-2.5 w-full max-w-md mb-6">
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5 w-full">
+          <button
+            onClick={handleDownload}
+            disabled={!downloadUrl}
+            className="flex items-center justify-center gap-1.5 px-4 py-2.5 rounded-full bg-gradient-to-r from-pink-500 to-purple-500 text-white font-medium text-xs sm:text-sm shadow-xs hover:scale-105 active:scale-95 transition"
+          >
+            <Download className="w-4 h-4" />
+            <span>Tải Ảnh PNG</span>
+          </button>
 
-        <button
-          onClick={handlePrint}
-          className="flex items-center justify-center gap-1.5 px-4 py-2.5 rounded-full bg-white hover:bg-pink-50 border border-pink-200 text-gray-700 font-medium text-xs sm:text-sm transition hover:scale-105 active:scale-95 shadow-2xs"
-        >
-          <Printer className="w-4 h-4 text-pink-500" />
-          <span>In Ngay</span>
-        </button>
+          <button
+            onClick={handlePrint}
+            className="flex items-center justify-center gap-1.5 px-4 py-2.5 rounded-full bg-white hover:bg-pink-50 border border-pink-200 text-gray-700 font-medium text-xs sm:text-sm transition hover:scale-105 active:scale-95 shadow-2xs"
+          >
+            <Printer className="w-4 h-4 text-pink-500" />
+            <span>In Ngay</span>
+          </button>
 
-        <button
-          onClick={() => setShowQrModal(true)}
-          className="flex items-center justify-center gap-1.5 px-4 py-2.5 rounded-full bg-white hover:bg-pink-50 border border-pink-200 text-gray-700 font-medium text-xs sm:text-sm transition hover:scale-105 active:scale-95 shadow-2xs"
-        >
-          <QrCode className="w-4 h-4 text-purple-500" />
-          <span>Quét Mã QR</span>
-        </button>
+          <button
+            onClick={() => setShowQrModal(true)}
+            className="flex items-center justify-center gap-1.5 px-4 py-2.5 rounded-full bg-white hover:bg-pink-50 border border-pink-200 text-gray-700 font-medium text-xs sm:text-sm transition hover:scale-105 active:scale-95 shadow-2xs"
+          >
+            <QrCode className="w-4 h-4 text-purple-500" />
+            <span>Quét Mã QR</span>
+          </button>
+        </div>
+
+        {/* Video Recap Download Button */}
+        {recapVideoUrl && (
+          <button
+            onClick={handleDownloadRecapVideo}
+            className="w-full flex items-center justify-center gap-2 px-4 py-2.5 rounded-full bg-gradient-to-r from-violet-600 via-purple-600 to-pink-500 text-white font-semibold text-xs sm:text-sm shadow-md hover:scale-102 active:scale-98 transition"
+          >
+            <Video className="w-4 h-4 text-pink-200" />
+            <span>Tải Video Recap Quay Ngầm (.webm)</span>
+          </button>
+        )}
       </div>
 
       {/* Start New Session */}
